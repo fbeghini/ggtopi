@@ -383,7 +383,7 @@ threshold <- 0.05
 
 ggtopi_filt <- filter_taxa(gg_topi, function(x) mean(x) > 5e-1, TRUE)
 
-dds <- DESeq2::DESeq(phyloseq_to_deseq2(ggtopi_filt, design = ~ cond_vac), parallel = TRUE, quiet = TRUE)
+dds <- DESeq2::DESeq(phyloseq_to_deseq2(ggtopi_filt, design = ~ cond_vac), parallel = TRUE, quiet = TRUE, fitType = 'parametric')
 
 dds_bif <- DESeq2::DESeq(phyloseq_to_deseq2(gg_topi, design = ~ cond_bif), parallel = TRUE, quiet = TRUE)
 dds1 <- DESeq2::DESeq(phyloseq_to_deseq2(ggtopi_filt, design = ~ timepoint), parallel = TRUE, quiet = TRUE)
@@ -485,129 +485,160 @@ res23.filtered %>% as.data.frame %>% cbind(as.matrix(tax_table(gg_topi)[rownames
 )
 ```
 
-<!-- ## Differential analysis Pentatome T3 VS T7 -->
-<!-- ```{r} -->
-<!--   res12 <- DESeq2::results(dds, contrast = c("cond_vac","T7_YES","T3_YES")) -->
-<!--   res12.filtered <- res12[!is.na(res12$padj),] -->
-<!--   res12.filtered <- res12.filtered[res12.filtered$padj < threshold,] -->
-<!--   timepoint_number <- stringr::str_sub(timepoint,17,17) -->
+## Differential analysis Pentatome T7 vs not vaccinated T7
+```{r}
+  res12 <- DESeq2::results(dds, contrast = c("cond_vac","T7_YES","T7_NO"), independentFiltering = TRUE)
+  res12.filtered <- res12[!is.na(res12$padj),]
+  res12.filtered <- res12.filtered[res12.filtered$padj < threshold,]
 
-<!--   plot(res12.filtered %>% as.data.frame %>% cbind(as.matrix(tax_table(gg_topi)[rownames(res12.filtered),])) %>% -->
-<!--     ggplot(aes(log2FoldChange, Genus)) + -->
-<!--     geom_vline(xintercept = 0.0, color = "gray", size = 0.5) + -->
-<!--     geom_point(size=3, aes(color = padj)) + -->
-<!--     facet_grid(Phylum ~ ., scales = "free", space = "free_y",switch = "y",as.table = T)+ -->
-<!--     theme_bw() + -->
-<!--     ggtitle('Pentatome T3 vs T7') + -->
-<!--     scale_y_discrete(position = "right") + -->
-<!--     theme(axis.text = element_text(hjust = 0, vjust=0.5, size = 11), -->
-<!--           strip.text = element_text(size = 9), -->
-<!--           axis.title = element_text(size = 9), -->
-<!--           axis.title.y = element_blank(), -->
-<!--           strip.background = element_rect(colour = "transparent", fill = "transparent"), -->
-<!--           strip.text.y = element_text(angle = 180) -->
-<!--     )) -->
+  plot(res12.filtered %>% as.data.frame %>% cbind(as.matrix(tax_table(gg_topi)[rownames(res12.filtered),])) %>%
+    ggplot(aes(log2FoldChange, Genus)) +
+    geom_vline(xintercept = 0.0, color = "gray", size = 0.5) +
+    geom_point(size=3, aes(color = log10(baseMean))) +
+    facet_grid(Phylum ~ ., scales = "free", space = "free_y",switch = "y",as.table = T)+
+    theme_bw() +
+    ggtitle('Pentatome T3 vs T7') +
+    scale_y_discrete(position = "right") +
+    theme(axis.text = element_text(hjust = 0, vjust=0.5, size = 11),
+          strip.text = element_text(size = 9),
+          axis.title = element_text(size = 9),
+          axis.title.y = element_blank(),
+          strip.background = element_rect(colour = "transparent", fill = "transparent"),
+          strip.text.y = element_text(angle = 180)
+    ))
 
-<!-- ``` -->
+```
 
-<!-- ## Differential analysis Empty vescicles T3 VS T7 -->
-<!-- ```{r} -->
-<!--   res12 <- DESeq2::results(dds, contrast = c("cond_vac","T7_NO","T3_NO")) -->
-<!--   res12.filtered <- res12[!is.na(res12$padj),] -->
-<!--   res12.filtered <- res12.filtered[res12.filtered$padj < threshold,] -->
+## Differential analysis Pentatome T3 VS T7
+```{r}
+  res12 <- DESeq2::results(dds, contrast = c("cond_vac","T7_YES","T3_NO"))
+  res12.filtered <- res12[!is.na(res12$padj),]
+  res12.filtered <- res12.filtered[res12.filtered$padj < threshold,]
 
-<!--   plot(res12.filtered %>% as.data.frame %>% cbind(as.matrix(tax_table(gg_topi)[rownames(res12.filtered),])) %>% -->
-<!--     ggplot(aes(log2FoldChange, Genus)) + -->
-<!--     geom_vline(xintercept = 0.0, color = "gray", size = 0.5) + -->
-<!--     geom_point(size=3, aes(color = baseMean)) + -->
-<!--     facet_grid(Phylum ~ ., scales = "free", space = "free_y",switch = "y",as.table = T)+ -->
-<!--     theme_bw() + -->
-<!--     ggtitle('Empty T3vsT7') + -->
-<!--     scale_y_discrete(position = "right") + -->
-<!--     theme(axis.text = element_text(hjust = 0, vjust=0.5, size = 11), -->
-<!--           strip.text = element_text(size = 9), -->
-<!--           axis.title = element_text(size = 9), -->
-<!--           axis.title.y = element_blank(), -->
-<!--           strip.background = element_rect(colour = "transparent", fill = "transparent"), -->
-<!--           strip.text.y = element_text(angle = 180) -->
-<!--     )) -->
+  plot(res12.filtered %>% as.data.frame %>% cbind(as.matrix(tax_table(gg_topi)[rownames(res12.filtered),])) %>%
+    ggplot(aes(log2FoldChange, Genus)) +
+    geom_vline(xintercept = 0.0, color = "gray", size = 0.5) +
+    geom_point(size=3, aes(color = log10(baseMean))) +
+    facet_grid(Phylum ~ ., scales = "free", space = "free_y",switch = "y",as.table = T)+
+    theme_bw() +
+    ggtitle('Pentatome T3 vs T7') +
+    scale_y_discrete(position = "right") +
+    theme(axis.text = element_text(hjust = 0, vjust=0.5, size = 11),
+          strip.text = element_text(size = 9),
+          axis.title = element_text(size = 9),
+          axis.title.y = element_blank(),
+          strip.background = element_rect(colour = "transparent", fill = "transparent"),
+          strip.text.y = element_text(angle = 180)
+    ))
 
-<!-- ``` -->
+```
 
-<!-- ## Differential analysis Pentatoma vs empty vescicles T7 -->
-<!-- ```{r} -->
-<!--   res12 <- DESeq2::results(dds, contrast = c("cond_vac","T7_YES","T7_NO")) -->
-<!--   res12.filtered <- res12[!is.na(res12$padj),] -->
-<!--   res12.filtered <- res12.filtered[res12.filtered$padj < threshold,] -->
+```{r}
+res12.filtered %>% 
+  as.data.frame %>% 
+  cbind(as.matrix(tax_table(gg_topi)[rownames(res12.filtered),])) %>%
+  filter(is.na(Phylum)) %>%  knitr::kable()
+```
 
-<!--   plot(res12.filtered %>% as.data.frame %>% cbind(as.matrix(tax_table(gg_topi)[rownames(res12.filtered),])) %>% -->
-<!--     ggplot(aes(log2FoldChange, Genus)) + -->
-<!--     geom_vline(xintercept = 0.0, color = "gray", size = 0.5) + -->
-<!--     geom_point(size=3, aes(color = baseMean)) + -->
-<!--     facet_grid(Phylum ~ ., scales = "free", space = "free_y",switch = "y",as.table = T)+ -->
-<!--     theme_bw() + -->
-<!--     ggtitle(paste('PBS vs Pentatoma at timepoint', timepoint_number, sep = ' ')) + -->
-<!--     scale_y_discrete(position = "right") + -->
-<!--     theme(axis.text = element_text(hjust = 0, vjust=0.5, size = 11), -->
-<!--           strip.text = element_text(size = 9), -->
-<!--           axis.title = element_text(size = 9), -->
-<!--           axis.title.y = element_blank(), -->
-<!--           strip.background = element_rect(colour = "transparent", fill = "transparent"), -->
-<!--           strip.text.y = element_text(angle = 180) -->
-<!--     )) -->
 
-<!-- ``` -->
+## Differential analysis Empty vescicles T3 VS T7
+```{r}
+  res12 <- DESeq2::results(dds, contrast = c("cond_vac","T7_NO","T3_NO"))
+  res12.filtered <- res12[!is.na(res12$padj),]
+  res12.filtered <- res12.filtered[res12.filtered$padj < threshold,]
 
-<!-- ## Differential analysis Pentatoma vs empty vescicles T3 -->
-<!-- ```{r} -->
-<!--   res12 <- DESeq2::results(dds, contrast = c("cond_vac","T3_YES","T3_NO")) -->
-<!--   res12.filtered <- res12[!is.na(res12$padj),] -->
-<!--   res12.filtered <- res12.filtered[res12.filtered$padj < threshold,] -->
-<!--   timepoint_number <- stringr::str_sub(timepoint,17,17) -->
+  plot(res12.filtered %>% as.data.frame %>% cbind(as.matrix(tax_table(gg_topi)[rownames(res12.filtered),])) %>%
+    ggplot(aes(log2FoldChange, Genus)) +
+    geom_vline(xintercept = 0.0, color = "gray", size = 0.5) +
+    geom_point(size=3, aes(color = baseMean)) +
+    facet_grid(Phylum ~ ., scales = "free", space = "free_y",switch = "y",as.table = T)+
+    theme_bw() +
+    ggtitle('Empty T3vsT7') +
+    scale_y_discrete(position = "right") +
+    theme(axis.text = element_text(hjust = 0, vjust=0.5, size = 11),
+          strip.text = element_text(size = 9),
+          axis.title = element_text(size = 9),
+          axis.title.y = element_blank(),
+          strip.background = element_rect(colour = "transparent", fill = "transparent"),
+          strip.text.y = element_text(angle = 180)
+    ))
 
-<!--   plot(res12.filtered %>% as.data.frame %>% cbind(as.matrix(tax_table(gg_topi)[rownames(res12.filtered),])) %>% -->
-<!--     ggplot(aes(log2FoldChange, Genus)) + -->
-<!--     geom_vline(xintercept = 0.0, color = "gray", size = 0.5) + -->
-<!--     geom_point(size=3, aes(color = baseMean)) + -->
-<!--     facet_grid(Phylum ~ ., scales = "free", space = "free_y",switch = "y",as.table = T)+ -->
-<!--     theme_bw() + -->
-<!--     ggtitle(paste('PBS vs Pentatoma at timepoint', timepoint_number, sep = ' ')) + -->
-<!--     scale_y_discrete(position = "right") + -->
-<!--     theme(axis.text = element_text(hjust = 0, vjust=0.5, size = 11), -->
-<!--           strip.text = element_text(size = 9), -->
-<!--           axis.title = element_text(size = 9), -->
-<!--           axis.title.y = element_blank(), -->
-<!--           strip.background = element_rect(colour = "transparent", fill = "transparent"), -->
-<!--           strip.text.y = element_text(angle = 180) -->
-<!--     )) -->
+```
 
-<!-- ``` -->
+## Differential analysis Pentatoma vs empty vescicles T7
+```{r}
+  res12 <- DESeq2::results(dds, contrast = c("cond_vac","T7_YES","T7_NO"))
+  res12.filtered <- res12[!is.na(res12$padj),]
+  res12.filtered <- res12.filtered[res12.filtered$padj < threshold,]
 
-<!-- ## Differential analysis Pentatome vs No-pentatome at different timepoints -->
-<!-- ```{r} -->
-<!-- for (timepoint in c("merge_timepointT3.pentatomePBS","merge_timepointT4.pentatomePBS","merge_timepointT5.pentatomePBS","merge_timepointT6.pentatomePBS","merge_timepointT7.pentatomePBS")) { -->
-<!--   res12 <- DESeq2::results(dds, contrast = c("cond_vac","T6_Pentatoma","T6_Empty"), ) -->
-<!--   res12.filtered <- res12[!is.na(res12$padj),] -->
-<!--   res12.filtered <- res12.filtered[res12.filtered$padj < threshold,] -->
-<!--   timepoint_number <- stringr::str_sub(timepoint,17,17) -->
+  plot(res12.filtered %>% as.data.frame %>% cbind(as.matrix(tax_table(gg_topi)[rownames(res12.filtered),])) %>%
+    ggplot(aes(log2FoldChange, Genus)) +
+    geom_vline(xintercept = 0.0, color = "gray", size = 0.5) +
+    geom_point(size=3, aes(color = baseMean)) +
+    facet_grid(Phylum ~ ., scales = "free", space = "free_y",switch = "y",as.table = T)+
+    theme_bw() +
+    ggtitle(paste('PBS vs Pentatoma at timepoint', timepoint_number, sep = ' ')) +
+    scale_y_discrete(position = "right") +
+    theme(axis.text = element_text(hjust = 0, vjust=0.5, size = 11),
+          strip.text = element_text(size = 9),
+          axis.title = element_text(size = 9),
+          axis.title.y = element_blank(),
+          strip.background = element_rect(colour = "transparent", fill = "transparent"),
+          strip.text.y = element_text(angle = 180)
+    ))
 
-<!--   plot(res12.filtered %>% as.data.frame %>% cbind(as.matrix(tax_table(gg_topi)[rownames(res12.filtered),])) %>% -->
-<!--     ggplot(aes(log2FoldChange, Genus)) + -->
-<!--     geom_vline(xintercept = 0.0, color = "gray", size = 0.5) + -->
-<!--     geom_point(size=3, aes(color = baseMean)) + -->
-<!--     facet_grid(Phylum ~ ., scales = "free", space = "free_y",switch = "y",as.table = T)+ -->
-<!--     theme_bw() + -->
-<!--     ggtitle(paste('PBS vs Pentatoma at timepoint', timepoint_number, sep = ' ')) + -->
-<!--     scale_y_discrete(position = "right") + -->
-<!--     theme(axis.text = element_text(hjust = 0, vjust=0.5, size = 11), -->
-<!--           strip.text = element_text(size = 9), -->
-<!--           axis.title = element_text(size = 9), -->
-<!--           axis.title.y = element_blank(), -->
-<!--           strip.background = element_rect(colour = "transparent", fill = "transparent"), -->
-<!--           strip.text.y = element_text(angle = 180) -->
-<!--     )) -->
-<!-- } -->
-<!-- ``` -->
+```
+
+## Differential analysis Pentatoma vs empty vescicles T3
+```{r}
+  res12 <- DESeq2::results(dds, contrast = c("cond_vac","T3_YES","T3_NO"))
+  res12.filtered <- res12[!is.na(res12$padj),]
+  res12.filtered <- res12.filtered[res12.filtered$padj < threshold,]
+  timepoint_number <- stringr::str_sub(timepoint,17,17)
+
+  plot(res12.filtered %>% as.data.frame %>% cbind(as.matrix(tax_table(gg_topi)[rownames(res12.filtered),])) %>%
+    ggplot(aes(log2FoldChange, Genus)) +
+    geom_vline(xintercept = 0.0, color = "gray", size = 0.5) +
+    geom_point(size=3, aes(color = baseMean)) +
+    facet_grid(Phylum ~ ., scales = "free", space = "free_y",switch = "y",as.table = T)+
+    theme_bw() +
+    ggtitle(paste('PBS vs Pentatoma at timepoint', timepoint_number, sep = ' ')) +
+    scale_y_discrete(position = "right") +
+    theme(axis.text = element_text(hjust = 0, vjust=0.5, size = 11),
+          strip.text = element_text(size = 9),
+          axis.title = element_text(size = 9),
+          axis.title.y = element_blank(),
+          strip.background = element_rect(colour = "transparent", fill = "transparent"),
+          strip.text.y = element_text(angle = 180)
+    ))
+
+```
+
+## Differential analysis Pentatome vs No-pentatome at different timepoints
+```{r}
+for (timepoint in c("merge_timepointT3.pentatomePBS","merge_timepointT4.pentatomePBS","merge_timepointT5.pentatomePBS","merge_timepointT6.pentatomePBS","merge_timepointT7.pentatomePBS")) {
+  res12 <- DESeq2::results(dds, contrast = c("cond_vac","T6_Pentatoma","T6_Empty"), )
+  res12.filtered <- res12[!is.na(res12$padj),]
+  res12.filtered <- res12.filtered[res12.filtered$padj < threshold,]
+  timepoint_number <- stringr::str_sub(timepoint,17,17)
+
+  plot(res12.filtered %>% as.data.frame %>% cbind(as.matrix(tax_table(gg_topi)[rownames(res12.filtered),])) %>%
+    ggplot(aes(log2FoldChange, Genus)) +
+    geom_vline(xintercept = 0.0, color = "gray", size = 0.5) +
+    geom_point(size=3, aes(color = baseMean)) +
+    facet_grid(Phylum ~ ., scales = "free", space = "free_y",switch = "y",as.table = T)+
+    theme_bw() +
+    ggtitle(paste('PBS vs Pentatoma at timepoint', timepoint_number, sep = ' ')) +
+    scale_y_discrete(position = "right") +
+    theme(axis.text = element_text(hjust = 0, vjust=0.5, size = 11),
+          strip.text = element_text(size = 9),
+          axis.title = element_text(size = 9),
+          axis.title.y = element_blank(),
+          strip.background = element_rect(colour = "transparent", fill = "transparent"),
+          strip.text.y = element_text(angle = 180)
+    ))
+}
+```
 
 <!-- ## Differential analysis Bifido vs No-bifido at different timepoints -->
 <!-- ```{r} -->
