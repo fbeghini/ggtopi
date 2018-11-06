@@ -1,0 +1,22 @@
+{
+    "collab_server" : "",
+    "contents" : "",
+    "created" : 1538482686656.000,
+    "dirty" : false,
+    "encoding" : "UTF-8",
+    "folds" : "",
+    "hash" : "1866081613",
+    "id" : "5DE7F143",
+    "lastKnownWriteTime" : 1539268737,
+    "last_content_update" : 1539268737,
+    "path" : "~/git/nychanesmicrobiome/vignettes/smoking.Rmd",
+    "project_path" : null,
+    "properties" : {
+        "cursorPosition" : "252,0",
+        "scrollLine" : "0"
+    },
+    "relative_order" : 4,
+    "source_on_save" : false,
+    "source_window" : "",
+    "type" : "r_markdown"
+}

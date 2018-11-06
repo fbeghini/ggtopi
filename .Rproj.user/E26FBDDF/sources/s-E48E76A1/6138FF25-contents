@@ -1,0 +1,7 @@
+x<-ordinate(gg_topi, method = "MDS", distance = distwu, weighted = TRUE) %>% plot_ordination(gg_topi, ., justDF = TRUE)
+x
+centroids <- aggregate(cbind(Axis.1, Axis.2)~timepoint, x, mean)
+
+ggplot(x, aes(Axis.1, Axis.2, color=timepoint)) +
+  geom_point(size = 0.8) +
+  geom_point(data=centroids, size = 4)

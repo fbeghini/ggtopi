@@ -1,0 +1,23 @@
+{
+    "collab_server" : "",
+    "contents" : "",
+    "created" : 1538426997322.000,
+    "dirty" : false,
+    "encoding" : "UTF-8",
+    "folds" : "",
+    "hash" : "0",
+    "id" : "812772F0",
+    "lastKnownWriteTime" : 1541415091,
+    "last_content_update" : 1541415091,
+    "path" : "/shares/CIBIO-Storage/CM/mir/projects/fbeghini_16s/20180731_run186ms_segata/gg_topi.Rmd",
+    "project_path" : "gg_topi.Rmd",
+    "properties" : {
+        "chunk_output_type" : "console",
+        "cursorPosition" : "442,0",
+        "scrollLine" : "0"
+    },
+    "relative_order" : 1,
+    "source_on_save" : false,
+    "source_window" : "",
+    "type" : "r_markdown"
+}

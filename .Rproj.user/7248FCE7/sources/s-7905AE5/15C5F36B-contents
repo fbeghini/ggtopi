@@ -1,0 +1,40 @@
+use <- res$baseMean > metadata(res)$filterThreshold
+h1 <- hist(res$pvalue[!use], breaks=0:50/50, plot=FALSE)
+h2 <- hist(res$pvalue[use], breaks=0:50/50, plot=FALSE)
+colori <- c(`do not pass`="khaki", `pass`="powderblue")
+barplot(height = rbind(h1$counts, h2$counts), beside = FALSE,
+        col = colori, space = 0, main = "", ylab="frequency")
+text(x = c(0, length(h1$counts)), y = 0, label = paste(c(0,1)),
+     adj = c(0.5,1.7), xpd=NA)
+legend("topright", fill=rev(colori), legend=rev(names(colori)))
+
+
+library("IHW")
+ihwRes <- ihw(pvalue ~ baseMean,  data = data.frame(res), alpha = 0.1)
+rejections(ihwRes)
+head(adj_pvalues(ihwRes))
+
+
+subs <- phyloseq::subset_samples(gg_topi, merge_timepoint == 'T6')
+dds2 <- DESeq2::DESeq(phyloseq_to_deseq2(subs, design = ~ pentatome), parallel = TRUE, quiet = TRUE)
+res <- DESeq2::results(dds2, contrast = c("pentatome","VV","VP"))
+res.filtered <- res[!is.na(res$padj),]
+res.filtered <- res.filtered[res.filtered$padj < threshold,]
+
+
+res.filtered %>% as.data.frame %>% cbind(as.matrix(tax_table(subs)[rownames(res.filtered),])) %>%
+  ggplot(aes(log2FoldChange, Genus)) + 
+  geom_vline(xintercept = 0.0, color = "gray", size = 0.5) +
+  geom_point(size=3, aes(color = padj)) + 
+  facet_grid(Phylum ~ ., scales = "free", space = "free_y",switch = "y",as.table = T)+
+  theme_bw() +
+  ggtitle('T1 vs T2') +
+  scale_y_discrete(position = "right") +
+  theme(axis.text = element_text(hjust = 0, vjust=0.5, size = 11),
+        strip.text = element_text(size = 9),
+        axis.title = element_text(size = 9),
+        axis.title.y = element_blank(),
+        strip.background = element_rect(colour = "transparent", fill = "transparent"),
+        strip.text.y = element_text(angle = 180)
+  )
+
