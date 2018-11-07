@@ -36,11 +36,15 @@ rownames(mappingfile) <- mappingfile$Description
 
 sample_data(gg_topi) <- mappingfile
 sample_data(gg_topi)$id.topo <- factor(sample_data(gg_topi)$id.topo)
-sample_data(gg_topi)$pentatome <- factor(stringr::str_sub(sample_data(gg_topi)$condizione,1,2), labels = c('Pentatoma','Empty'))
-sample_data(gg_topi)$bifido <- factor(stringr::str_sub(sample_data(gg_topi)$condizione,3,3), labels = c('Bifido','PBS'))
+
+sample_data(gg_topi)$pentatome <- factor(stringr::str_split(sample_data(gg_topi)$condizione, ' \\+ ', simplify = TRUE)[,1])
+sample_data(gg_topi)$bifido <- factor(stringr::str_split(sample_data(gg_topi)$condizione, ' \\+ ', simplify = TRUE)[,2])
+
 sample_data(gg_topi)$cond_all <- factor(with(sample_data(gg_topi), paste(timepoint,real_vaccine, real_bifido, sep = '_')))
 sample_data(gg_topi)$cond_vac <- factor(with(sample_data(gg_topi), paste(merge_timepoint,real_vaccine, sep = '_')))
 sample_data(gg_topi)$cond_bif <- factor(with(sample_data(gg_topi), paste(merge_timepoint,real_bifido, sep = '_')))
+
+sample_data(gg_topi)$vacc_bif <- strtoi(paste(ifelse(sample_data(gg_topi)$real_vaccine=='YES','1','0'),ifelse(sample_data(gg_topi)$real_bifido=='YES','1','0'), sep = ''), 2)
 
 colnames(tax_table(gg_topi)) <- c("Domain", "Phylum", "Class", "Order", "Family", "Genus", "Species")
 
@@ -146,7 +150,6 @@ distancesjac$timepoint2 <- stringr::str_replace(sapply(as.character(distances$co
 
 ## Ordination: Mean all samples per timepoint
 ```{r}
-
 x <- ordinate(gg_topi, method = "MDS", distance = distwu, weighted = TRUE) %>% plot_ordination(gg_topi, ., justDF = TRUE)
 
 centroids <- aggregate(cbind(Axis.1, Axis.2)~timepoint, x, mean)
@@ -238,6 +241,14 @@ ggplot(subset(ordwu, merge_timepoint %in% c('T3','T7'))) +
   theme_bw() 
 ```
  
+```{r}
+ggplot(subset(ordwu, timepoint %in% c('T3','T7'))) +
+  geom_point(aes(Axis.1, Axis.2, color=timepoint, shape=bifido), size=3) +
+  facet_wrap(pentatome~bifido)+
+  theme_bw() 
+```
+
+
 ## Ordination: T3 vs T4
 ```{r}
 metadata_2cat <- mappingfile[mappingfile$timepoint %in% c('T4','T3'),]
@@ -383,7 +394,19 @@ threshold <- 0.05
 
 ggtopi_filt <- filter_taxa(gg_topi, function(x) mean(x) > 5e-1, TRUE)
 
+
+
 dds <- DESeq2::DESeq(phyloseq_to_deseq2(ggtopi_filt, design = ~ cond_vac), parallel = TRUE, quiet = TRUE, fitType = 'parametric')
+
+mmtx <- model.matrix(object = ~timepoint*real_vaccine*real_bifido, data = data.frame(gg_topi@sam_data))
+idx <- which(apply(mmtx, 2, function(x) all(x==0)))
+mmtx <- mmtx[,-idx]
+
+rmmtx <- model.matrix(object = ~ timepoint, data = data.frame(gg_topi@sam_data))
+
+pds <- phyloseq_to_deseq2(ggtopi_filt, design = ~timepoint*real_vaccine*real_bifido, ignoreRank = TRUE)
+
+dds <- DESeq2::DESeq(pds, full = mmtx, reduced = rmmtx, test = 'LRT')
 
 dds_bif <- DESeq2::DESeq(phyloseq_to_deseq2(gg_topi, design = ~ cond_bif), parallel = TRUE, quiet = TRUE)
 dds1 <- DESeq2::DESeq(phyloseq_to_deseq2(ggtopi_filt, design = ~ timepoint), parallel = TRUE, quiet = TRUE)
@@ -487,9 +510,11 @@ res23.filtered %>% as.data.frame %>% cbind(as.matrix(tax_table(gg_topi)[rownames
 
 ## Differential analysis Pentatome T7 vs not vaccinated T7
 ```{r}
-  res12 <- DESeq2::results(dds, contrast = c("cond_vac","T7_YES","T7_NO"), independentFiltering = TRUE)
+  res12 <- DESeq2::results(dds, contrast = c("cond_vac","T7_YES","T7_NO"))
+  res12 <- DESeq2::results(dds)
   res12.filtered <- res12[!is.na(res12$padj),]
   res12.filtered <- res12.filtered[res12.filtered$padj < threshold,]
+
 
   plot(res12.filtered %>% as.data.frame %>% cbind(as.matrix(tax_table(gg_topi)[rownames(res12.filtered),])) %>%
     ggplot(aes(log2FoldChange, Genus)) +
