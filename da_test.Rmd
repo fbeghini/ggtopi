@@ -290,6 +290,7 @@ res21.filt %>% as.data.frame %>%
 # T3 vs T7
 ```{r, cache=TRUE}
 ggtopi_subs <-subset_samples(gg_topi, timepoint %in% c('T3','T7'))
+ggtopi_subs.relab <- transform_sample_counts(ggtopi_subs, function(x) x/sum(x))
 ggtopi_subs.genus <- tax_glom(ggtopi_subs,taxrank = "Genus")
 ggtopi_subs.genus.relab <- transform_sample_counts(ggtopi_subs.genus, function(x) x/sum(x))
 mmtx <- model.matrix(object = ~timepoint + timepoint:real_vaccine + timepoint:real_bifido + timepoint:real_vaccine:real_bifido, data = data.frame(ggtopi_subs@sam_data))
@@ -333,13 +334,13 @@ res37.filt %>% as.data.frame %>%
 ```{r}
   t37_samples_idx <- grep('T7|T3', sample_names(ggtopi_subs), perl = TRUE)
   
-  otu_ab_t37 <- otu_table(ggtopi_subs)[rownames(res37.filt), t37_samples_idx] %>%
+  otu_ab_t37 <- otu_table(ggtopi_subs.relab)[rownames(res37.filt), t37_samples_idx] %>%
               data.frame %>%
               tibble::rownames_to_column("OTU") %>%
               tidyr::gather_("SampleID", "Abundance", setdiff(colnames(.), "OTU")) %>%
               mutate(timepoint=stringr::str_sub(.$SampleID,12, 13))
 
-  otu_ab_t37 %>% bind_cols(data.frame(tax_table(ggtopi_filt)[otu_ab_t37$OTU,c('Phylum','Family','Genus')])) %>%
+  otu_ab_t37 %>% bind_cols(data.frame(tax_table(ggtopi_subs.relab)[otu_ab_t37$OTU,c('Phylum','Family','Genus')])) %>%
   ggplot() +
     geom_boxplot(aes(interaction(Family, Genus), Abundance, fill=timepoint)) + 
     facet_grid(Phylum ~ ., scales = "free", space = "free_y", as.table= T)+
@@ -358,7 +359,7 @@ res37.filt <- res37.filt[res37.filt$padj<0.05,]
 ### Dotplot log2FC vs Genus
 ```{r}
 res37.filt %>% as.data.frame %>% 
-  cbind(as.matrix(tax_table(ggtopi_subs.genus)[rownames(res37.filt),])) %>%
+  cbind(as.matrix(tax_table(ggtopi_subs.genus)[rownames(res37.filt),-7])) %>%
   ggplot(aes(log2FoldChange, interaction(Family, Genus))) + 
   geom_vline(xintercept = 0.0, color = "gray", size = 0.5) +
   geom_point(size=3, aes(color = baseMean)) + 
@@ -538,4 +539,24 @@ res37.filt %>% as.data.frame %>%
         strip.background = element_rect(colour = "transparent", fill = "transparent"),
         strip.text.y = element_text(angle = 180)
   )
+```
+
+### Boxplot of Genus abundances of differenitally abundant Genera
+```{r}
+  genus_ab_t <- otu_table(ggtopi_subs.genus.relab)[rownames(res37.filt), ] %>%
+              data.frame %>%
+              tibble::rownames_to_column("OTU") %>%
+              tidyr::gather_("SampleID", "Abundance", setdiff(colnames(.), "OTU")) %>%
+              mutate(timepoint=stringr::str_sub(.$SampleID,12, 13)) %>%
+              mutate(condition= if_else(timepoint=='T3','',stringr::str_sub(.$SampleID,4, 6)))
+    
+  
+  genus_ab_t %>% bind_cols(data.frame(tax_table(ggtopi_subs.genus.relab)[genus_ab_t$OTU,c('Phylum','Family','Genus')])) %>%
+  ggplot() +
+    geom_boxplot(aes(interaction(Family, Genus), Abundance, fill=interaction(timepoint, condition))) + 
+    facet_grid(Phylum ~ ., scales = "free", space = "free_y", as.table= T)+
+    coord_flip() + 
+    theme_bw() +
+    theme(strip.background = element_rect(colour = "transparent", fill = "transparent"),
+        strip.text.y = element_text(angle = 0))
 ```
