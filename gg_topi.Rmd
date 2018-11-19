@@ -1,12 +1,14 @@
 ---
-title: "GG_topi2"
+title: "GG_topi"
 author: "Francesco Beghini"
 date: "26/09/2018"
 output: 
   html_document: 
+    df_print: kable
+    self_contained: no
     theme: cerulean
 editor_options: 
-  chunk_output_type: console
+  chunk_output_type: inline
 ---
 
 ```{r setup, include=FALSE}
@@ -22,9 +24,9 @@ library(DESeq2)
 ```
 
 ```{r load qiime, include=FALSE, cache=TRUE}
-gg_topi <- import_biom(BIOMfilename = '/shares/CIBIO-Storage/CM/mir/projects/fbeghini_16s/20180731_run186ms_segata/grandi/otus_silva/otu_table_mc10_w_tax.biom',
-                         treefilename = '/shares/CIBIO-Storage/CM/mir/projects/fbeghini_16s/20180731_run186ms_segata/grandi/otus_silva/rep_set.tre',
-                         refseqfilename = '/shares/CIBIO-Storage/CM/mir/projects/fbeghini_16s/20180731_run186ms_segata/grandi/otus_silva/rep_set.fna',
+gg_topi <- import_biom(BIOMfilename = '/shares/CIBIO-Storage/CM/mir/projects/fbeghini_16s/20180731_run186ms_segata/grandi/otus/otu_table_mc10_w_tax_rdp.biom',
+                         treefilename = '/shares/CIBIO-Storage/CM/mir/projects/fbeghini_16s/20180731_run186ms_segata/grandi/otus/rep_set.tre',
+                         refseqfilename = '/shares/CIBIO-Storage/CM/mir/projects/fbeghini_16s/20180731_run186ms_segata/grandi/otus/rep_set.fna',
                         refseqFunction = parse_taxonomy_default
                       )
 
@@ -54,6 +56,21 @@ tax_table_filtered <- tax_table(gg_topi) %>%
 
 rownames(tax_table_filtered) <- rownames(tax_table(gg_topi))
 tax_table(gg_topi) <-  as.matrix(tax_table_filtered)
+
+unass_otus <- tax_table(gg_topi) %>%
+                data.frame %>%
+                tibble::rownames_to_column('OTU') %>%
+                filter(Domain == 'Unassigned') %>%
+                select(OTU)
+
+unknown_otus <- tax_table(gg_topi) %>%
+                data.frame %>%
+                tibble::rownames_to_column('OTU') %>%
+                filter(is.na(Genus)) %>%
+                select(OTU)
+
+tax_table(gg_topi)[unass_otus$OTU, ] <- rep.int('Unassigned', 7)
+tax_table(gg_topi)[unknown_otus$OTU, 'Genus'] <- 'Unknown'
 
 gg_topi.genus <- tax_glom(gg_topi,taxrank = "Genus")
 gg_topi.genus.relab <- transform_sample_counts(gg_topi.genus, function(x) x/sum(x))
@@ -108,7 +125,7 @@ ggplot(x) +
 <!-- ``` -->
 
 # Beta diversity
-```{r Beta diversity, cache=TRUE}
+```{r Beta diversity, cache=FALSE}
 distwu <- phyloseq::distance(gg_topi, "wunifrac")
 distbc <- phyloseq::distance(gg_topi, "bray")
 distjac <- phyloseq::distance(gg_topi, "jaccard")
@@ -316,10 +333,11 @@ ggplot(aes(Axis.1, Axis.2)) +
 
 ## Beta diversity between timepoints, T1 is the baseline
 ```{r Beta diversity between timepoints t1}
-distances[distances$timepoint1 == 1 | distances$timepoint1 == 2, 'timepoint1'] <- 2
-distances[distances$timepoint2 == 1 | distances$timepoint2 == 2, 'timepoint2'] <- 2
+distances_tmp <- distances
+distances_tmp[distances_tmp$timepoint1 == 1 | distances_tmp$timepoint1 == 2, 'timepoint1'] <- 2
+distances_tmp[distances_tmp$timepoint2 == 1 | distances_tmp$timepoint2 == 2, 'timepoint2'] <- 2
 
-t1 <- distances %>% 
+t1 <- distances_tmp %>% 
   filter(topo1==topo2) %>%
   filter(timepoint1==2) %>%
   filter(timepoint1!=timepoint2) %>%
@@ -388,311 +406,8 @@ tn1 %>%
   facet_grid(condizione1 ~ .)
 ```
 
-## Differential analysis
-```{r DA, cache=TRUE}
-threshold <- 0.05
-
-ggtopi_filt <- filter_taxa(gg_topi, function(x) mean(x) > 5e-1, TRUE)
-
-
-
-dds <- DESeq2::DESeq(phyloseq_to_deseq2(ggtopi_filt, design = ~ cond_vac), parallel = TRUE, quiet = TRUE, fitType = 'parametric')
-
-mmtx <- model.matrix(object = ~timepoint*real_vaccine*real_bifido, data = data.frame(gg_topi@sam_data))
-idx <- which(apply(mmtx, 2, function(x) all(x==0)))
-mmtx <- mmtx[,-idx]
-
-rmmtx <- model.matrix(object = ~ timepoint, data = data.frame(gg_topi@sam_data))
-
-pds <- phyloseq_to_deseq2(ggtopi_filt, design = ~timepoint*real_vaccine*real_bifido, ignoreRank = TRUE)
-
-dds <- DESeq2::DESeq(pds, full = mmtx, reduced = rmmtx, test = 'LRT')
-
-dds_bif <- DESeq2::DESeq(phyloseq_to_deseq2(gg_topi, design = ~ cond_bif), parallel = TRUE, quiet = TRUE)
-dds1 <- DESeq2::DESeq(phyloseq_to_deseq2(ggtopi_filt, design = ~ timepoint), parallel = TRUE, quiet = TRUE)
-
-dds_phylum <- DESeq2::DESeq(phyloseq_to_deseq2(gg_topi.phylum, design = ~ timepoint), parallel = TRUE, quiet = TRUE)
-
-```
-## T2 vs T3
-```{r DA T2 vs T3}
-res23 <- DESeq2::results(dds1, contrast = c("timepoint","T2","T3"), alpha = 0.05, format = "DataFrame")
-res23.filtered <- res23[!is.na(res23$padj),]
-res23.filtered <- res23.filtered[res23.filtered$padj < threshold,]
-res23.filtered <- res23.filtered[abs(res23.filtered$log2FoldChange) > 2,]
-
-res23.filtered %>% as.data.frame %>% cbind(as.matrix(tax_table(gg_topi)[rownames(res23.filtered),])) %>%
-  ggplot(aes(log2FoldChange, Genus)) + 
-  geom_vline(xintercept = 0.0, color = "gray", size = 0.5) +
-  geom_point(size=3, aes(color = log(baseMean))) + 
-  facet_grid(Phylum ~ ., scales = "free", space = "free_y",switch = "y",as.table = T)+
-  theme_bw() +
-  ggtitle('T1 vs T2') +
-  scale_y_discrete(position = "right") +
-  theme(axis.text = element_text(hjust = 0, vjust=0.5, size = 11),
-        strip.text = element_text(size = 9),
-        axis.title = element_text(size = 9),
-        axis.title.y = element_blank(),
-        strip.background = element_rect(colour = "transparent", fill = "transparent"),
-        strip.text.y = element_text(angle = 180)
-  )
-```
-
-## T2 vs T3 phylum level
-```{r DA T2 vs T3 phylum}
-res_phylum <- DESeq2::results(dds_phylum, contrast = c("timepoint","T2","T3"), alpha = 0.05, format = "DataFrame")
-res_phylum.filtered <- res_phylum[!is.na(res_phylum$padj),]
-res_phylum.filtered <- res_phylum.filtered[res_phylum.filtered$padj < threshold,]
-# res_phylum.filtered <- res_phylum.filtered[abs(res_phylum.filtered$log2FoldChange) > 2,]
-
-res_phylum.filtered %>% as.data.frame %>% cbind(as.matrix(tax_table(gg_topi)[rownames(res_phylum.filtered),])) %>%
-  ggplot(aes(log2FoldChange, Phylum)) + 
-  geom_vline(xintercept = 0.0, color = "gray", size = 0.5) +
-  geom_point(size=3, aes(color = baseMean)) + 
-  theme_bw() +
-  scale_y_discrete(position = "right") +
-  theme(axis.text = element_text(hjust = 0, vjust=0.5, size = 11),
-        strip.text = element_text(size = 9),
-        axis.title = element_text(size = 9),
-        axis.title.y = element_blank(),
-        strip.background = element_rect(colour = "transparent", fill = "transparent"),
-        strip.text.y = element_text(angle = 180)
-  )
-```
-
-## Check T1 vs T2
-```{r DA T1 vs T2}
-res12 <- DESeq2::results(dds1, contrast = c("timepoint","T1","T2"))
-res12.filtered <- res12[!is.na(res12$padj),]
-res12.filtered <- res12.filtered[res12.filtered$padj < threshold,]
-
-res12.filtered %>% 
-  as.data.frame %>% 
-  cbind(as.matrix(tax_table(gg_topi)[rownames(res12.filtered),])) %>%
-  ggplot(aes(log2FoldChange, Genus)) + 
-  geom_vline(xintercept = 0.0, color = "gray", size = 0.5) +
-  geom_point(size=3, aes(color = baseMean)) + 
-  facet_grid(Phylum ~ ., scales = "free", space = "free_y",switch = "y",as.table = T)+
-  theme_bw() +
-  ggtitle('Timepoint 1 vs Timepoint 2') +
-  scale_y_discrete(position = "right") +
-  theme(axis.text = element_text(hjust = 0, vjust=0.5, size = 11),
-        strip.text = element_text(size = 9),
-        axis.title = element_text(size = 9),
-        axis.title.y = element_blank(),
-        strip.background = element_rect(colour = "transparent", fill = "transparent"),
-        strip.text.y = element_text(angle = 180)
-  )
-```
-
-
-```{r DA T3 vs T4}
-res23 <- DESeq2::results(dds1, contrast = c("timepoint","T3","T4"))
-res23.filtered <- res23[!is.na(res23$padj),]
-res23.filtered <- res23.filtered[res23.filtered$padj < threshold,]
-
-res23.filtered %>% as.data.frame %>% cbind(as.matrix(tax_table(gg_topi)[rownames(res23.filtered),])) %>%
-  ggplot(aes(log2FoldChange, Genus)) + 
-  geom_vline(xintercept = 0.0, color = "gray", size = 0.5) +
-  geom_point(size=3, aes(color = baseMean)) + 
-  facet_grid(Phylum ~ ., scales = "free", space = "free_y",switch = "y",as.table = T)+
-  theme_bw() +
-  ggtitle('Timepoint 3 vs Timepoint 4') +
-  scale_y_discrete(position = "right") +
-  theme(axis.text = element_text(hjust = 0, vjust=0.5, size = 11),
-        strip.text = element_text(size = 9),
-        axis.title = element_text(size = 9),
-        axis.title.y = element_blank(),
-        strip.background = element_rect(colour = "transparent", fill = "transparent"),
-        strip.text.y = element_text(angle = 180)
-)
-```
-
-## Differential analysis Pentatome T7 vs not vaccinated T7
-```{r}
-  res12 <- DESeq2::results(dds, contrast = c("cond_vac","T7_YES","T7_NO"))
-  res12 <- DESeq2::results(dds)
-  res12.filtered <- res12[!is.na(res12$padj),]
-  res12.filtered <- res12.filtered[res12.filtered$padj < threshold,]
-
-
-  plot(res12.filtered %>% as.data.frame %>% cbind(as.matrix(tax_table(gg_topi)[rownames(res12.filtered),])) %>%
-    ggplot(aes(log2FoldChange, Genus)) +
-    geom_vline(xintercept = 0.0, color = "gray", size = 0.5) +
-    geom_point(size=3, aes(color = log10(baseMean))) +
-    facet_grid(Phylum ~ ., scales = "free", space = "free_y",switch = "y",as.table = T)+
-    theme_bw() +
-    ggtitle('Pentatome T3 vs T7') +
-    scale_y_discrete(position = "right") +
-    theme(axis.text = element_text(hjust = 0, vjust=0.5, size = 11),
-          strip.text = element_text(size = 9),
-          axis.title = element_text(size = 9),
-          axis.title.y = element_blank(),
-          strip.background = element_rect(colour = "transparent", fill = "transparent"),
-          strip.text.y = element_text(angle = 180)
-    ))
-
-```
-
-## Differential analysis Pentatome T3 VS T7
-```{r}
-  res12 <- DESeq2::results(dds, contrast = c("cond_vac","T7_YES","T3_NO"))
-  res12.filtered <- res12[!is.na(res12$padj),]
-  res12.filtered <- res12.filtered[res12.filtered$padj < threshold,]
-
-  plot(res12.filtered %>% as.data.frame %>% cbind(as.matrix(tax_table(gg_topi)[rownames(res12.filtered),])) %>%
-    ggplot(aes(log2FoldChange, Genus)) +
-    geom_vline(xintercept = 0.0, color = "gray", size = 0.5) +
-    geom_point(size=3, aes(color = log10(baseMean))) +
-    facet_grid(Phylum ~ ., scales = "free", space = "free_y",switch = "y",as.table = T)+
-    theme_bw() +
-    ggtitle('Pentatome T3 vs T7') +
-    scale_y_discrete(position = "right") +
-    theme(axis.text = element_text(hjust = 0, vjust=0.5, size = 11),
-          strip.text = element_text(size = 9),
-          axis.title = element_text(size = 9),
-          axis.title.y = element_blank(),
-          strip.background = element_rect(colour = "transparent", fill = "transparent"),
-          strip.text.y = element_text(angle = 180)
-    ))
-
-```
-
-```{r}
-res12.filtered %>% 
-  as.data.frame %>% 
-  cbind(as.matrix(tax_table(gg_topi)[rownames(res12.filtered),])) %>%
-  filter(is.na(Phylum)) %>%  knitr::kable()
-```
-
-
-## Differential analysis Empty vescicles T3 VS T7
-```{r}
-  res12 <- DESeq2::results(dds, contrast = c("cond_vac","T7_NO","T3_NO"))
-  res12.filtered <- res12[!is.na(res12$padj),]
-  res12.filtered <- res12.filtered[res12.filtered$padj < threshold,]
-
-  plot(res12.filtered %>% as.data.frame %>% cbind(as.matrix(tax_table(gg_topi)[rownames(res12.filtered),])) %>%
-    ggplot(aes(log2FoldChange, Genus)) +
-    geom_vline(xintercept = 0.0, color = "gray", size = 0.5) +
-    geom_point(size=3, aes(color = baseMean)) +
-    facet_grid(Phylum ~ ., scales = "free", space = "free_y",switch = "y",as.table = T)+
-    theme_bw() +
-    ggtitle('Empty T3vsT7') +
-    scale_y_discrete(position = "right") +
-    theme(axis.text = element_text(hjust = 0, vjust=0.5, size = 11),
-          strip.text = element_text(size = 9),
-          axis.title = element_text(size = 9),
-          axis.title.y = element_blank(),
-          strip.background = element_rect(colour = "transparent", fill = "transparent"),
-          strip.text.y = element_text(angle = 180)
-    ))
-
-```
-
-## Differential analysis Pentatoma vs empty vescicles T7
-```{r}
-  res12 <- DESeq2::results(dds, contrast = c("cond_vac","T7_YES","T7_NO"))
-  res12.filtered <- res12[!is.na(res12$padj),]
-  res12.filtered <- res12.filtered[res12.filtered$padj < threshold,]
-
-  plot(res12.filtered %>% as.data.frame %>% cbind(as.matrix(tax_table(gg_topi)[rownames(res12.filtered),])) %>%
-    ggplot(aes(log2FoldChange, Genus)) +
-    geom_vline(xintercept = 0.0, color = "gray", size = 0.5) +
-    geom_point(size=3, aes(color = baseMean)) +
-    facet_grid(Phylum ~ ., scales = "free", space = "free_y",switch = "y",as.table = T)+
-    theme_bw() +
-    ggtitle(paste('PBS vs Pentatoma at timepoint', timepoint_number, sep = ' ')) +
-    scale_y_discrete(position = "right") +
-    theme(axis.text = element_text(hjust = 0, vjust=0.5, size = 11),
-          strip.text = element_text(size = 9),
-          axis.title = element_text(size = 9),
-          axis.title.y = element_blank(),
-          strip.background = element_rect(colour = "transparent", fill = "transparent"),
-          strip.text.y = element_text(angle = 180)
-    ))
-
-```
-
-## Differential analysis Pentatoma vs empty vescicles T3
-```{r}
-  res12 <- DESeq2::results(dds, contrast = c("cond_vac","T3_YES","T3_NO"))
-  res12.filtered <- res12[!is.na(res12$padj),]
-  res12.filtered <- res12.filtered[res12.filtered$padj < threshold,]
-  timepoint_number <- stringr::str_sub(timepoint,17,17)
-
-  plot(res12.filtered %>% as.data.frame %>% cbind(as.matrix(tax_table(gg_topi)[rownames(res12.filtered),])) %>%
-    ggplot(aes(log2FoldChange, Genus)) +
-    geom_vline(xintercept = 0.0, color = "gray", size = 0.5) +
-    geom_point(size=3, aes(color = baseMean)) +
-    facet_grid(Phylum ~ ., scales = "free", space = "free_y",switch = "y",as.table = T)+
-    theme_bw() +
-    ggtitle(paste('PBS vs Pentatoma at timepoint', timepoint_number, sep = ' ')) +
-    scale_y_discrete(position = "right") +
-    theme(axis.text = element_text(hjust = 0, vjust=0.5, size = 11),
-          strip.text = element_text(size = 9),
-          axis.title = element_text(size = 9),
-          axis.title.y = element_blank(),
-          strip.background = element_rect(colour = "transparent", fill = "transparent"),
-          strip.text.y = element_text(angle = 180)
-    ))
-
-```
-
-## Differential analysis Pentatome vs No-pentatome at different timepoints
-```{r}
-for (timepoint in c("merge_timepointT3.pentatomePBS","merge_timepointT4.pentatomePBS","merge_timepointT5.pentatomePBS","merge_timepointT6.pentatomePBS","merge_timepointT7.pentatomePBS")) {
-  res12 <- DESeq2::results(dds, contrast = c("cond_vac","T6_Pentatoma","T6_Empty"), )
-  res12.filtered <- res12[!is.na(res12$padj),]
-  res12.filtered <- res12.filtered[res12.filtered$padj < threshold,]
-  timepoint_number <- stringr::str_sub(timepoint,17,17)
-
-  plot(res12.filtered %>% as.data.frame %>% cbind(as.matrix(tax_table(gg_topi)[rownames(res12.filtered),])) %>%
-    ggplot(aes(log2FoldChange, Genus)) +
-    geom_vline(xintercept = 0.0, color = "gray", size = 0.5) +
-    geom_point(size=3, aes(color = baseMean)) +
-    facet_grid(Phylum ~ ., scales = "free", space = "free_y",switch = "y",as.table = T)+
-    theme_bw() +
-    ggtitle(paste('PBS vs Pentatoma at timepoint', timepoint_number, sep = ' ')) +
-    scale_y_discrete(position = "right") +
-    theme(axis.text = element_text(hjust = 0, vjust=0.5, size = 11),
-          strip.text = element_text(size = 9),
-          axis.title = element_text(size = 9),
-          axis.title.y = element_blank(),
-          strip.background = element_rect(colour = "transparent", fill = "transparent"),
-          strip.text.y = element_text(angle = 180)
-    ))
-}
-```
-
-<!-- ## Differential analysis Bifido vs No-bifido at different timepoints -->
-<!-- ```{r} -->
-<!-- for (timepoint in c("bifidoPBS.merge_timepointT3","bifidoPBS.merge_timepointT4","bifidoPBS.merge_timepointT5","bifidoPBS.merge_timepointT6","bifidoPBS.merge_timepointT7")) { -->
-<!--   res12 <- DESeq2::results(dds2, contrast = list(c("bifido_PBS_vs_Bifido" , timepoint))) -->
-<!--   res12.filtered <- res12[!is.na(res12$padj),] -->
-<!--   res12.filtered <- res12.filtered[res12.filtered$padj < threshold,] -->
-<!--   timepoint_number <- stringr::str_sub(timepoint,-1) -->
-
-<!--   plot(res12.filtered %>% as.data.frame %>% cbind(as.matrix(tax_table(gg_topi)[rownames(res12.filtered),])) %>% -->
-<!--     ggplot(aes(log2FoldChange, Genus)) + -->
-<!--     geom_vline(xintercept = 0.0, color = "gray", size = 0.5) + -->
-<!--     geom_point(size=3, aes(color = baseMean)) + -->
-<!--     facet_grid(Phylum ~ ., scales = "free", space = "free_y",switch = "y",as.table = T)+ -->
-<!--     theme_bw() + -->
-<!--     ggtitle(paste('Bifido vs no bifido at timepoint', timepoint_number, sep = ' ')) + -->
-<!--     scale_y_discrete(position = "right") + -->
-<!--     theme(axis.text = element_text(hjust = 0, vjust=0.5, size = 11), -->
-<!--           strip.text = element_text(size = 9), -->
-<!--           axis.title = element_text(size = 9), -->
-<!--           axis.title.y = element_blank(), -->
-<!--           strip.background = element_rect(colour = "transparent", fill = "transparent"), -->
-<!--           strip.text.y = element_text(angle = 180) -->
-<!--     )) -->
-<!-- } -->
-<!-- ``` -->
-
 # PERMANOVA
-```{r}
+```{r, cache=TRUE}
 metadata <- as(sample_data(gg_topi), "data.frame")
 permanova.res <- data.frame()
 distwu <- phyloseq::distance(gg_topi, "wunifrac")
@@ -704,7 +419,7 @@ all_permanova <- as.data.frame(vegan::adonis(formula = distwu ~ merge_timepoint*
 knitr::kable(all_permanova)
 ```
 
-```{r}
+```{r, cache=TRUE}
 for(s in combn(levels(metadata$merge_timepoint),2, simplify = FALSE)){
   metadata_2cat <- metadata[metadata$merge_timepoint %in% s,]
   distwu_2cat <- phyloseq::distance(subset_samples(gg_topi, merge_timepoint %in% s), "wunifrac")
@@ -714,7 +429,7 @@ for(s in combn(levels(metadata$merge_timepoint),2, simplify = FALSE)){
 ```
 
 
-```{r}
+```{r, cache=TRUE}
 for(s in combn(levels(metadata$pentatome),2, simplify = FALSE)){
   metadata_2cat <- metadata[metadata$pentatome %in% s,]
   distwu_2cat <- phyloseq::distance(subset_samples(gg_topi, pentatome %in% s), "wunifrac")
@@ -724,7 +439,7 @@ for(s in combn(levels(metadata$pentatome),2, simplify = FALSE)){
 ```
 
 
-```{r}
+```{r, cache=TRUE}
 for(s in combn(levels(metadata$bifido),2, simplify = FALSE)){
   metadata_2cat <- metadata[metadata$bifido %in% s,]
   distwu_2cat <- phyloseq::distance(subset_samples(gg_topi, bifido %in% s), "wunifrac")
@@ -738,12 +453,12 @@ knitr::kable(permanova.res)
 ```
 
 ## PERMANOVA all vs all
-```{r}
+```{r, cache=TRUE}
 permanova.res <- data.frame()
 for (s in combn(levels(sample_data(gg_topi)$cond_all),2, simplify = FALSE)) {
   metadata_2cat <- data.frame(sample_data(gg_topi))[sample_data(gg_topi)$cond_all %in% s,]
   distwu_2cat <- phyloseq::distance(subset_samples(gg_topi, cond_all %in% s), "wunifrac")
-  permanova <- vegan::adonis(formula = distwu_2cat ~ cond_all, data = metadata_2cat)
+  permanova <- vegan::adonis(formula = distwu_2cat ~ cond_all, data = metadata_2cat, parallel = 2)
   permanova.res %<>% bind_rows(data.frame(contrast = stringr::str_c(s, collapse = " vs "), r2=permanova$aov.tab[1,5],pvalue=permanova$aov.tab[1,6])) %>% arrange(pvalue)
 }
 ```
@@ -803,11 +518,12 @@ t37 %>%
   stat_boxplot()
 ```
 
-## Correlation beta-diversity T2-TX, tumor mass
+
+## Correlation beta-diversity T3-TX, tumor mass
 ```{r corr tumor wunifrac}
 distances %>% 
   dplyr::filter(topo1==topo2) %>%
-  dplyr::filter(timepoint1==2) %>%
+  dplyr::filter(timepoint1==3) %>%
   dplyr::filter(timepoint2>4) %>%
   dplyr::select(cols, timepoint2, value) %>%
   dplyr::left_join(mappingfile, by=c('cols' = 'Description')) %>%
@@ -820,7 +536,7 @@ distances %>%
 ```{r}
 wunif_ds <- distances %>% 
   dplyr::filter(topo1==topo2) %>%
-  dplyr::filter(timepoint1==2) %>%
+  dplyr::filter(timepoint1==3) %>%
   dplyr::filter(timepoint2>4) %>%
   dplyr::select(cols, timepoint2, value) %>%
   dplyr::left_join(mappingfile, by=c('cols' = 'Description'))
@@ -839,13 +555,12 @@ knitr::kable(ds_corr_wunif)
 ```{r corr tumor braycurtis}
 distancesbc %>% 
   dplyr::filter(topo1==topo2) %>%
-  dplyr::filter(timepoint1==2) %>%
+  dplyr::filter(timepoint1==3) %>%
   dplyr::filter(timepoint2>4) %>%
   dplyr::select(cols, timepoint2, value) %>%
   dplyr::left_join(mappingfile, by=c('cols' = 'Description')) %>%
   ggplot(aes(value,tumor_mass)) +
-  geom_point() + 
-  stat_smooth_func(geom="text",method="lm",hjust=0,parse=TRUE) +
+  geom_point() +
   facet_grid(timepoint2~condizione, scales = "free", space = "free_y")+
   geom_smooth(method = 'lm')
 ```
@@ -853,7 +568,7 @@ distancesbc %>%
 ```{r}
 brayc_ds <- distancesbc %>% 
   dplyr::filter(topo1==topo2) %>%
-  dplyr::filter(timepoint1==2) %>%
+  dplyr::filter(timepoint1==3) %>%
   dplyr::filter(timepoint2>4) %>%
   dplyr::select(cols, timepoint2, value) %>%
   dplyr::left_join(mappingfile, by=c('cols' = 'Description'))
@@ -872,13 +587,12 @@ knitr::kable(ds_corr_braycf)
 ```{r corr tumor jaccard}
 distancesjac %>% 
   dplyr::filter(topo1==topo2) %>%
-  dplyr::filter(timepoint1==2) %>%
+  dplyr::filter(timepoint1==3) %>%
   dplyr::filter(timepoint2>4) %>%
   dplyr::select(cols, timepoint2, value) %>%
   dplyr::left_join(mappingfile, by=c('cols' = 'Description')) %>%
   ggplot(aes(value,tumor_mass)) +
   geom_point() + 
-  stat_smooth_func(geom="text",method="lm",hjust=0,parse=TRUE) +
   facet_grid(timepoint2~condizione, scales = "free", space = "free_y")+
   geom_smooth(method = 'lm')
 ```
@@ -886,7 +600,7 @@ distancesjac %>%
 ```{r}
 jac_ds <- distancesjac %>% 
   dplyr::filter(topo1==topo2) %>%
-  dplyr::filter(timepoint1==2) %>%
+  dplyr::filter(timepoint1==3) %>%
   dplyr::filter(timepoint2>4) %>%
   dplyr::select(cols, timepoint2, value) %>%
   dplyr::left_join(mappingfile, by=c('cols' = 'Description'))
@@ -902,15 +616,65 @@ for(x in unique(jac_ds$timepoint2)){
 knitr::kable(ds_corr_jac)
 ```
 
-# Tracking OTU
-```{r}
-counts <- data.frame(as.data.frame(otu_table(gg_topi)[c('EU622777.1.1487','EU504401.1.1405'),] %>% t)) %>% tibble::rownames_to_column('sampleid')
-colnames(counts) <- c('sampleid',"Lachnospiraceae_NK4A136","Muribaculaceae")
-counts$t <- sapply(as.character(counts$sampleid), function(x) strsplit(x,'-')[[1]][4])
-counts$condizione <- sapply(as.character(counts$sampleid), function(x) strsplit(x,'-')[[1]][2])
+```{r, include=FALSE, eval=FALSE}
+otus <- data.frame(otu_table(gg_topi.genus.relab), check.names = FALSE) %>% 
+  tibble::rownames_to_column('OTU') %>% 
+  tidyr::gather_("SampleID", "Abundance", setdiff(colnames(.), "OTU")) %>%
+  tibble::add_column(., timepoint = stringr::str_sub(.$SampleID, 12, 13)) %>%
+  tibble::add_column(., mouseID = stringr::str_sub(.$SampleID, 8, 10))
 
-reshape2::melt(counts, id.vars = c('t', 'condizione','sampleid')) %>%
-  ggplot() +
-  stat_boxplot(aes(t, value)) + 
-  facet_grid(variable ~ condizione, scales = "free_x", space="free_y")
+wb<-createWorkbook(type="xlsx")
+for(mID in sort(unique(otus$mouseID))){
+  tmp <- otus %>%
+    filter(mouseID==mID) %>%
+    reshape2::dcast(OTU ~ timepoint, value.var = 'Abundance') %>%
+    left_join(data.frame(tax_table(gg_topi.genus.relab)[,-7], check.names = FALSE) %>% tibble::rownames_to_column('OTU'))
+  sheet <- createSheet(wb, sheetName = mID)
+  addDataFrame(tmp, sheet)
+}
+saveWorkbook(wb, "otutable_topi.xlsx")
 ```
+
+# Distribution of distances between conditions per timepoint
+```{r}
+dct <- distances %>%
+  filter(timepoint1 == timepoint2) %>%
+  select(timepoint1, condizione1, condizione2, value) %>%
+  dplyr::rename(timepoint = timepoint1) %>% 
+  group_by(timepoint, condizione1, condizione2) %>%
+  summarise(mediandistance=median(value)) 
+```
+```{r include=TRUE,  results = "asis"}
+for(t in unique(dct$timepoint)){
+  print(dct %>%
+    filter(timepoint == t) %>% 
+    dplyr::rename(condizione = condizione2) %>%
+    spread(condizione1, mediandistance) %>%
+    knitr::kable())
+
+}
+```
+
+
+
+# Distribution of distances between timepoints per conditions
+```{r}
+dtc <- distances %>%
+  filter(condizione1 == condizione2) %>%
+  dplyr::rename(condizione = condizione1) %>% 
+  group_by(condizione, timepoint1, timepoint2) %>%
+  summarise(mediandistance=median(value)) 
+```
+
+```{r include=TRUE,  results = "asis"}
+for(c in unique(dtc$condizione)){
+  print(dtc %>%
+    filter(condizione == c) %>% 
+    dplyr::rename(timepoint = timepoint1) %>%
+    spread(timepoint2, mediandistance) %>%
+    knitr::kable())
+    cat("\n")
+}
+```
+
+

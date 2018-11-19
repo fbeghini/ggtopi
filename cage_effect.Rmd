@@ -1,0 +1,103 @@
+---
+title: "Cage effect"
+author: "Francesco Beghini"
+date: "November 8, 2018"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(message = FALSE, warning = FALSE, paged.print=FALSE, echo=FALSE)
+knitr::opts_chunk$set(fig.width=12, fig.height=8) 
+library(phyloseq)
+library(magrittr)
+library(tidyverse)
+library(reshape2)
+library(ggsignif)
+library(DESeq2)
+
+```
+
+```{r load qiime, include=FALSE, cache=TRUE}
+gg_topi <- import_biom(BIOMfilename = '/shares/CIBIO-Storage/CM/mir/projects/fbeghini_16s/20180731_run186ms_segata/grandi/otus_silva/otu_table_mc10_w_tax.biom',
+                         treefilename = '/shares/CIBIO-Storage/CM/mir/projects/fbeghini_16s/20180731_run186ms_segata/grandi/otus_silva/rep_set.tre',
+                         refseqfilename = '/shares/CIBIO-Storage/CM/mir/projects/fbeghini_16s/20180731_run186ms_segata/grandi/otus_silva/rep_set.fna',
+                        refseqFunction = parse_taxonomy_default
+                      )
+
+mappingfile <- read.delim('/shares/CIBIO-Storage/CM/mir/projects/fbeghini_16s/20180731_run186ms_segata/grandi/mappingfile', row.names = 1, check.names = FALSE)
+mappingfile$Description %<>% str_replace_all(.,'_','-')
+mappingfile$condizione <- factor(mappingfile$condizione, labels = c('Pentatome + Bifido', 'Pentatome + PBS', 'Empty + Bifido', 'Empty + PBS'))
+sample_names(gg_topi) <- mappingfile[sample_names(gg_topi), 'Description']
+rownames(mappingfile) <- mappingfile$Description
+
+sample_data(gg_topi) <- mappingfile
+sample_data(gg_topi)$id.topo <- factor(sample_data(gg_topi)$id.topo)
+
+sample_data(gg_topi)$pentatome <- factor(stringr::str_split(sample_data(gg_topi)$condizione, ' \\+ ', simplify = TRUE)[,1])
+sample_data(gg_topi)$bifido <- factor(stringr::str_split(sample_data(gg_topi)$condizione, ' \\+ ', simplify = TRUE)[,2])
+sample_data(gg_topi)$cond_all <- factor(with(sample_data(gg_topi), paste(timepoint,real_vaccine, real_bifido, sep = '_')))
+sample_data(gg_topi)$cond_vac <- factor(with(sample_data(gg_topi), paste(merge_timepoint,real_vaccine, sep = '_')))
+sample_data(gg_topi)$cond_bif <- factor(with(sample_data(gg_topi), paste(merge_timepoint,real_bifido, sep = '_')))
+
+sample_data(gg_topi)$vacc_bif <- strtoi(paste(ifelse(sample_data(gg_topi)$real_vaccine=='YES','1','0'),ifelse(sample_data(gg_topi)$real_bifido=='YES','1','0'), sep = ''), 2)
+
+colnames(tax_table(gg_topi)) <- c("Domain", "Phylum", "Class", "Order", "Family", "Genus", "Species")
+
+tax_table_filtered <- tax_table(gg_topi) %>%
+  as.data.frame %>% 
+  mutate_all( .funs = function(x) stringr:::str_replace_all(x,"D_.__",""))
+
+rownames(tax_table_filtered) <- rownames(tax_table(gg_topi))
+tax_table(gg_topi) <-  as.matrix(tax_table_filtered)
+```
+
+# How's the dispostion of cages
+```{r Beta diversity, cache=TRUE}
+distwu <- phyloseq::distance(gg_topi, "wunifrac")
+ordwu <- ordinate(gg_topi, method = "MDS", distance = distwu, weighted = TRUE)
+```
+
+```{r}
+plot_ordination(gg_topi, ordwu, color="cage")
+```
+
+
+# B-diversity intra cage
+```{r, cache = TRUE}
+distances <- reshape2::melt(as.matrix(distwu), varnames = c('rows','cols'))
+distances$topo1 <- factor(sapply(as.character(distances$rows), function(x) strsplit(x,'-')[[1]][3]))
+distances$topo2 <- factor(sapply(as.character(distances$cols), function(x) strsplit(x,'-')[[1]][3]))
+distances$timepoint1 <- stringr::str_replace(sapply(as.character(distances$rows), function(x) strsplit(x,'-')[[1]][4]), 'T', '') %>% as.numeric
+distances$timepoint2 <- stringr::str_replace(sapply(as.character(distances$cols), function(x) strsplit(x,'-')[[1]][4]), 'T', '') %>% as.numeric
+
+distances %<>%
+  inner_join(unique(data.frame(sample_data(gg_topi))[,c('id.topo','cage')]), by = c('topo1' = 'id.topo')) %>%
+  rename('cage'='cage1') %>%
+  left_join(unique(data.frame(sample_data(gg_topi))[,c('id.topo','cage')]), by = c('topo2' = 'id.topo')) %>%
+  rename('cage'='cage2')
+```
+
+# Intra cage diversity through time
+```{r}
+  distances %>%
+  filter(cage1==cage2) %>%
+  filter(timepoint1==timepoint2) %>%
+  ggplot() +
+  geom_boxplot(aes(cage1, value)) + 
+  facet_wrap(timepoint1 ~ .)
+```
+
+# Inter cage diversity through time
+```{r}
+  distances %>%
+  filter(cage1!=cage2) %>%
+  filter(timepoint1==timepoint2) %>%
+  mutate(cage = paste(.$cage1, .$cage2, sep =' vs ')) %>%
+  ggplot() +
+  geom_boxplot(aes(cage, value)) + 
+  facet_wrap(timepoint1 ~ ., ncol = 1) +
+  theme(axis.text.x = element_text(angle = 90))
+```
