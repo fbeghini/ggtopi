@@ -2,7 +2,6 @@
 title: "Differential Analysis"
 output: 
   html_document: 
-    number_sections: yes
     theme: cosmo
     toc: yes
 editor_options: 
@@ -421,8 +420,6 @@ res37.filt %>% as.data.frame %>%
 ### Boxplot of OTUs abundances of differenitally abundant OTUs
 ```{r}
   t37_samples_idx <- grep('T7|T3', sample_names(ggtopi_filt), perl = TRUE)
-  tax_table(gg_topi.relab)[rownames(res37.filt),]
-
 
   otu_ab_t37 <- otu_table(gg_topi.relab)[rownames(res37.filt), t37_samples_idx] %>%
               data.frame %>%
@@ -538,7 +535,7 @@ res37.filt %>% as.data.frame %>%
         axis.title.y = element_blank(),
         strip.background = element_rect(colour = "transparent", fill = "transparent"),
         strip.text.y = element_text(angle = 180)
-  )
+      )
 ```
 
 ### Boxplot of Genus abundances of differenitally abundant Genera
@@ -551,12 +548,14 @@ res37.filt %>% as.data.frame %>%
               mutate(condition= if_else(timepoint=='T3','',stringr::str_sub(.$SampleID,4, 6)))
     
   
-  genus_ab_t %>% bind_cols(data.frame(tax_table(ggtopi_subs.genus.relab)[genus_ab_t$OTU,c('Phylum','Family','Genus')])) %>%
-  ggplot() +
-    geom_boxplot(aes(interaction(Family, Genus), Abundance, fill=interaction(timepoint, condition))) + 
-    facet_grid(Phylum ~ ., scales = "free", space = "free_y", as.table= T)+
-    coord_flip() + 
-    theme_bw() +
-    theme(strip.background = element_rect(colour = "transparent", fill = "transparent"),
-        strip.text.y = element_text(angle = 0))
+  genus_ab_t %>%
+    bind_rows(genus_ab_t[genus_ab_t$timepoint=='T7',-5]) %>%
+    bind_cols(data.frame(tax_table(ggtopi_subs.genus.relab)[.$OTU,c('Phylum','Family','Genus')])) %>%
+    ggplot() +
+      geom_boxplot(aes(interaction(Family, Genus), Abundance, fill=interaction(timepoint, condition))) + 
+      facet_grid(Phylum ~ ., scales = "free", space = "free_y", as.table= T)+
+      coord_flip() + 
+      theme_bw() +
+      theme( strip.background = element_rect(colour = "transparent", fill = "transparent"),
+             strip.text.y = element_text(angle = 0))
 ```
