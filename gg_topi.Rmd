@@ -20,75 +20,18 @@ library(reshape2)
 library(ggsignif)
 library(DESeq2)
 
+source('R/loadQiimeData.R')
+source('R/calculatePairwiseDistances.R')
 ```
 
 ```{r load qiime, include=FALSE, cache=TRUE}
-gg_topi <- import_biom(BIOMfilename = '/shares/CIBIO-Storage/CM/mir/projects/fbeghini_16s/20180731_run186ms_segata/grandi/otus/otu_table_mc10_w_tax_rdp.biom',
-                         treefilename = '/shares/CIBIO-Storage/CM/mir/projects/fbeghini_16s/20180731_run186ms_segata/grandi/otus/rep_set.tre',
-                         refseqfilename = '/shares/CIBIO-Storage/CM/mir/projects/fbeghini_16s/20180731_run186ms_segata/grandi/otus/rep_set.fna',
-                        refseqFunction = parse_taxonomy_default
-                      )
-
-mappingfile <- read.delim('/shares/CIBIO-Storage/CM/mir/projects/fbeghini_16s/20180731_run186ms_segata/grandi/mappingfile', row.names = 1, check.names = FALSE)
-mappingfile$Description %<>% str_replace_all(.,'_','-')
-mappingfile$condizione <- factor(mappingfile$condizione, labels = c('Pentatome + Bifido', 'Pentatome + PBS', 'Empty + Bifido', 'Empty + PBS'))
-sample_names(gg_topi) <- mappingfile[sample_names(gg_topi), 'Description']
-rownames(mappingfile) <- mappingfile$Description
-
-sample_data(gg_topi) <- mappingfile
-sample_data(gg_topi)$id.topo <- factor(sample_data(gg_topi)$id.topo)
-
-sample_data(gg_topi)$pentatome <- factor(stringr::str_split(sample_data(gg_topi)$condizione, ' \\+ ', simplify = TRUE)[,1])
-sample_data(gg_topi)$bifido <- factor(stringr::str_split(sample_data(gg_topi)$condizione, ' \\+ ', simplify = TRUE)[,2])
-
-sample_data(gg_topi)$cond_all <- factor(with(sample_data(gg_topi), paste(timepoint,real_vaccine, real_bifido, sep = '_')))
-sample_data(gg_topi)$cond_vac <- factor(with(sample_data(gg_topi), paste(merge_timepoint,real_vaccine, sep = '_')))
-sample_data(gg_topi)$cond_bif <- factor(with(sample_data(gg_topi), paste(merge_timepoint,real_bifido, sep = '_')))
-
-sample_data(gg_topi)$vacc_bif <- strtoi(paste(ifelse(sample_data(gg_topi)$real_vaccine=='YES','1','0'),ifelse(sample_data(gg_topi)$real_bifido=='YES','1','0'), sep = ''), 2)
-
-colnames(tax_table(gg_topi)) <- c("Domain", "Phylum", "Class", "Order", "Family", "Genus", "Species")
-
-tax_table_filtered <- tax_table(gg_topi) %>%
-  as.data.frame %>% 
-  mutate_all( .funs = function(x) stringr:::str_replace_all(x,"D_.__",""))
-
-rownames(tax_table_filtered) <- rownames(tax_table(gg_topi))
-tax_table(gg_topi) <-  as.matrix(tax_table_filtered)
-
-unass_otus <- tax_table(gg_topi) %>%
-                data.frame %>%
-                tibble::rownames_to_column('OTU') %>%
-                filter(Domain == 'Unassigned') %>%
-                select(OTU)
-
-unknown_otus <- tax_table(gg_topi) %>%
-                data.frame %>%
-                tibble::rownames_to_column('OTU') %>%
-                filter(is.na(Genus)) %>%
-                select(OTU)
-
-tax_table(gg_topi)[unass_otus$OTU, ] <- rep.int('Unassigned', 7)
-tax_table(gg_topi)[unknown_otus$OTU, 'Genus'] <- 'Unknown'
+gg_topi <- loadQiimeData()
 
 gg_topi.genus <- tax_glom(gg_topi,taxrank = "Genus")
 gg_topi.genus.relab <- transform_sample_counts(gg_topi.genus, function(x) x/sum(x))
 
 gg_topi.phylum <- tax_glom(gg_topi,taxrank = "Phylum")
 gg_topi.phylum.relab <- transform_sample_counts(gg_topi.phylum, function(x) x/sum(x))
-
-meta_samples <- data.frame(otu_table(gg_topi), check.names = FALSE) %>% 
-  tibble::rownames_to_column("OTU") %>%
-  tidyr::gather_("SampleID", "Abundance", setdiff(colnames(.), "OTU")) %>%
-  tibble::add_column(., timepoint = stringr::str_sub(.$SampleID, 12, 13)) %>%
-  dplyr::group_by(timepoint, OTU) %>%
-  dplyr::select(-SampleID)%>%
-  dplyr::summarise(Abundance=mean(Abundance)) %>%
-  tidyr::spread(timepoint, Abundance) %>%
-  tibble::column_to_rownames(var = 'OTU') %>%
-  data.frame()
-
-gg_topi_meta_samples <- phyloseq(otu_table(meta_samples, taxa_are_rows = TRUE), tax_table(gg_topi), phy_tree(gg_topi))
 ```
 <!-- # Taxonomy profile at genus level -->
 <!-- ```{r taxonomy, cache=FALSE} -->
@@ -103,65 +46,63 @@ VVB: Vuote + *Bifidobacterium*
 
 VPB: Pentatoma + *Bifidobacterium*
 
-# Alpha diversity
-```{r Alpha diversity}
-# otu_table(gg_topi) %>% colSums() %>% sort %>% barplot(xlab = c())
-# otu_table(gg_topi) %>% colSums() %>% summary()
-
+```{r Calculate alpha diversity}
 alpha_div <- estimate_richness(gg_topi)
 alpha_div %<>% bind_cols(data.frame(sample_data(gg_topi)))
+```
 
-x <- melt(alpha_div, id.vars = c('Description','condizione','timepoint'), measure.vars =  c('Observed', 'se.chao1', 'Simpson', 'Shannon'))
-x$value <- as.numeric(x$value)
-
-ggplot(x) +
+# Alpha diversity: timepoint x Index x Condition
+```{r Plot Alpha diversity boxplots}
+melt(alpha_div, id.vars = c('Description','condizione','timepoint'), measure.vars =  c('Observed', 'se.chao1', 'Simpson', 'Shannon')) %>%
+ggplot() +
   geom_boxplot(aes(timepoint, value)) +
   facet_grid(variable~condizione,scales = 'free_y')
 ```
-<!-- ## SFB abundance -->
-<!-- ```{r} -->
-<!-- knitr::kable(otu_table(gg_topi)[c(879,880),]) -->
-<!-- ``` -->
+
+## Alpha diversity: tumor vs no tumor
+```{r}
+filt_alpha <- alpha_div %>% 
+  filter(timepoint %in% c('T1', 'T2', 'T3')) %>%
+  select('Description','condizione','timepoint','Observed', 'se.chao1', 'Simpson', 'Shannon') %>%
+  rename('se.chao1' = 'Chao1') %>%
+  mutate(t=as.numeric(stringr::str_sub(timepoint,2,2))) %>% droplevels()
+
+ttest_res <- data.frame()
+for ( ts in list(c('T1','T2'), c('T2','T3')) ){
+  for( measure in c('Observed', 'Chao1', 'Simpson', 'Shannon') ){
+    ttest_res %<>% bind_rows( data.frame(Measure = measure,
+                                         Timepoint = paste(ts, collapse = ' vs '),
+                                         pvalue = with(filt_alpha %>% filter(timepoint %in% ts), t.test(as.formula(paste(measure, 't', sep = '~'))))$p.value))
+  }
+}
+
+filt_alpha %>%
+  melt(id.vars = c('Description','condizione','timepoint'), measure.vars =  c('Observed', 'Chao1', 'Simpson', 'Shannon')) %>%
+  ggplot() +
+  geom_boxplot(aes(timepoint, value)) +
+  xlab('Timepoint') +
+  ylab('Value') +
+  facet_grid(variable~.,scales = 'free_y') +
+  theme_minimal() +
+  theme( strip.background = element_rect(colour = "transparent", fill = "transparent"),
+           strip.text.y = element_text(angle = 0))
+
+knitr::kable(ttest_res)
+```
 
 # Beta diversity
-```{r Beta diversity, cache=FALSE}
+```{r Beta diversity, cache=TRUE}
 distwu <- phyloseq::distance(gg_topi, "wunifrac")
 distbc <- phyloseq::distance(gg_topi, "bray")
 distjac <- phyloseq::distance(gg_topi, "jaccard")
-distwu_meta <- phyloseq::distance(gg_topi_meta_samples, "jaccard") 
 
 ordwu <-  ordinate(gg_topi, method = "MDS", distance = distwu, weighted = TRUE) %>% plot_ordination(gg_topi, ., justDF = TRUE)
-ordwu_meta <-  ordinate(gg_topi_meta_samples, method = "MDS", distance = distwu_meta, weighted = TRUE)
 ordbc <-  ordinate(gg_topi, method = "MDS", distance = distbc, weighted = TRUE) %>% plot_ordination(gg_topi, ., justDF = TRUE)
 ordjac <-  ordinate(gg_topi, method = "MDS", distance = distjac, weighted = TRUE) %>% plot_ordination(gg_topi, ., justDF = TRUE)
 
-# plot_ordination(gg_topi, ordwu, color = 'condizione',shape = 'timepoint', title = 'Weighted UniFrac')
-# plot_ordination(gg_topi, ordwu, color = 'merge_timepoint', title = 'Weighted UniFrac')
-
-distances <- reshape2::melt(as.matrix(distwu), varnames = c('rows','cols'))
-distances$condizione1 <- sapply(as.character(distances$rows), function(x) strsplit(x,'-')[[1]][2])
-distances$pentatome1 <- sapply(as.character(distances$rows), function(x) str_sub(x, 5,5))
-distances$condizione2 <- sapply(as.character(distances$cols), function(x) strsplit(x,'-')[[1]][2])
-distances$topo1 <- factor(sapply(as.character(distances$rows), function(x) strsplit(x,'-')[[1]][3]))
-distances$topo2 <- factor(sapply(as.character(distances$cols), function(x) strsplit(x,'-')[[1]][3]))
-distances$timepoint1 <- stringr::str_replace(sapply(as.character(distances$rows), function(x) strsplit(x,'-')[[1]][4]), 'T', '') %>% as.numeric
-distances$timepoint2 <- stringr::str_replace(sapply(as.character(distances$cols), function(x) strsplit(x,'-')[[1]][4]), 'T', '') %>% as.numeric
-
-distancesbc <- reshape2::melt(as.matrix(distbc), varnames = c('rows','cols'))
-distancesbc$condizione1 <- sapply(as.character(distancesbc$rows), function(x) strsplit(x,'-')[[1]][2])
-distancesbc$condizione2 <- sapply(as.character(distancesbc$cols), function(x) strsplit(x,'-')[[1]][2])
-distancesbc$topo1 <- factor(sapply(as.character(distancesbc$rows), function(x) strsplit(x,'-')[[1]][3]))
-distancesbc$topo2 <- factor(sapply(as.character(distancesbc$cols), function(x) strsplit(x,'-')[[1]][3]))
-distancesbc$timepoint1 <- stringr::str_replace(sapply(as.character(distancesbc$rows), function(x) strsplit(x,'-')[[1]][4]), 'T', '') %>% as.numeric
-distancesbc$timepoint2 <- stringr::str_replace(sapply(as.character(distancesbc$cols), function(x) strsplit(x,'-')[[1]][4]), 'T', '') %>% as.numeric
-
-distancesjac <- reshape2::melt(as.matrix(distjac), varnames = c('rows','cols'))
-distancesjac$condizione1 <- sapply(as.character(distancesjac$rows), function(x) strsplit(x,'-')[[1]][2])
-distancesjac$condizione2 <- sapply(as.character(distancesjac$cols), function(x) strsplit(x,'-')[[1]][2])
-distancesjac$topo1 <- factor(sapply(as.character(distancesjac$rows), function(x) strsplit(x,'-')[[1]][3]))
-distancesjac$topo2 <- factor(sapply(as.character(distancesjac$cols), function(x) strsplit(x,'-')[[1]][3]))
-distancesjac$timepoint1 <- stringr::str_replace(sapply(as.character(distancesjac$rows), function(x) strsplit(x,'-')[[1]][4]), 'T', '') %>% as.numeric
-distancesjac$timepoint2 <- stringr::str_replace(sapply(as.character(distancesjac$cols), function(x) strsplit(x,'-')[[1]][4]), 'T', '') %>% as.numeric
+distanceswu <- calculate_pairwise_distances(distwu)
+distancesbc <- calculate_pairwise_distances(distbc)
+distancesjac <- calculate_pairwise_distances(distjac)
 ```
 
 ## Ordination: Mean all samples per timepoint
@@ -185,34 +126,12 @@ permanova <- vegan::adonis(formula = distwu_2cat ~ merge_timepoint, data = metad
 
 subset(ordwu, timepoint %in% c('T2','T3')) %>%
 ggplot(aes(Axis.1, Axis.2)) +
-  geom_point(aes(color=tumor_injected), size=3, alpha=.8) +
-  scale_color_brewer(name = "Tumor injected", palette="Dark2") + 
+  geom_point(aes(color=timepoint), size=3, alpha=.8) +
+  scale_color_brewer(name = "Timepoint", palette="Dark2") + 
   theme_minimal() +
-  annotation_custom(grob = grid::textGrob(paste('PERMANOVA\np-value=',permanova$aov.tab$`Pr(>F)`[1], '\nR2=', signif(permanova$aov.tab$R2[1], 2)), gp=grid::gpar(col="black", fontsize=10)),  xmin = -0.2, xmax = -.2, ymin = .25, ymax = .25)
+  annotation_custom(grob = grid::textGrob(label = bquote(atop("p-value"==.(permanova$aov.tab$`Pr(>F)`[1]),R^2==.(signif(permanova$aov.tab$R2[1], 2)))),
+    gp=grid::gpar(col="black", fontsize=13)),  xmin = 0.15, xmax = .15, ymin = -.05, ymax = -.05)
 ```
-
-
-## Alpha diversity: tumor vs no tumor
-```{r}
-filt_alpha <- alpha_div %>% 
-  filter(timepoint %in% c('T2','T3')) %>%
-  select('Description','condizione','timepoint','Observed', 'se.chao1', 'Simpson', 'Shannon') %>%
-  mutate(t=as.numeric(stringr::str_sub(timepoint,2,2)))
-
-ttest_res <- data.frame()
-for(measure in c('Observed', 'se.chao1', 'Simpson', 'Shannon')){
-  ttest_res %<>% bind_rows(data.frame(Measure=measure, pvalue=with(filt_alpha, t.test(as.formula(paste(measure, 't', sep = '~'))))$p.value))
-}
-
-filt_alpha %>%
-  melt(id.vars = c('Description','condizione','timepoint'), measure.vars =  c('Observed', 'se.chao1', 'Simpson', 'Shannon')) %>%
-  ggplot() +
-  geom_boxplot(aes(timepoint, value)) +
-  facet_grid(variable~.,scales = 'free_y')
-
-knitr::kable(ttest_res)
-```
-
 
 ### Merge T1 and T2 and use them as baseline
 ## Ordination: baseline vs T3
@@ -333,7 +252,7 @@ ggplot(aes(Axis.1, Axis.2)) +
 
 ## Beta diversity between timepoints, T1 is the baseline
 ```{r Beta diversity between timepoints t1}
-distances_tmp <- distances
+distances_tmp <- distanceswu
 distances_tmp[distances_tmp$timepoint1 == 1 | distances_tmp$timepoint1 == 2, 'timepoint1'] <- 2
 distances_tmp[distances_tmp$timepoint2 == 1 | distances_tmp$timepoint2 == 2, 'timepoint2'] <- 2
 
@@ -374,7 +293,7 @@ t1 %>%
 
 ## Beta diversity between timepoints, T(-1) is the baseline
 ```{r Beta diversity between timepoints tn-1}
-tn1 <- distances %>% 
+tn1 <- distanceswu %>% 
   filter(topo1==topo2) %>%
   filter(timepoint1==timepoint2-1) %>%
   filter(timepoint1!=timepoint2) %>%
@@ -478,7 +397,7 @@ knitr::kable(permanova$aov.tab)
 
 ## Beta diversity T3 vs T4
 ```{r}
-t1 <- distances %>% 
+t1 <- distanceswu %>% 
   dplyr::filter(topo1==topo2) %>%
   dplyr::filter(timepoint1==3) %>%
   dplyr::filter(timepoint2==4) %>%
@@ -492,7 +411,7 @@ t1 %>%
 
 ## Beta diversity T3 vs T7
 ```{r}
-t37 <- distances %>% 
+t37 <- distanceswu %>% 
   dplyr::filter(topo1==topo2) %>%
   dplyr::filter(timepoint1==3) %>%
   dplyr::filter(timepoint2==7) %>%
@@ -506,7 +425,7 @@ t37 %>%
 
 ## Correlation beta-diversity T3-TX, tumor mass
 ```{r corr tumor wunifrac}
-distances %>% 
+distanceswu %>% 
   dplyr::filter(topo1==topo2) %>%
   dplyr::filter(timepoint1==3) %>%
   dplyr::filter(timepoint2>4) %>%
@@ -519,7 +438,7 @@ distances %>%
 ```
 
 ```{r}
-wunif_ds <- distances %>% 
+wunif_ds <- distanceswu %>% 
   dplyr::filter(topo1==topo2) %>%
   dplyr::filter(timepoint1==3) %>%
   dplyr::filter(timepoint2>4) %>%
@@ -622,7 +541,7 @@ saveWorkbook(wb, "otutable_topi.xlsx")
 
 # Distribution of distances between conditions per timepoint
 ```{r}
-dct <- distances %>%
+dct <- distanceswu %>%
   filter(timepoint1 == timepoint2) %>%
   select(timepoint1, condizione1, condizione2, value) %>%
   dplyr::rename(timepoint = timepoint1) %>% 
@@ -645,7 +564,7 @@ for(t in unique(dct$timepoint)){
 
 # Distribution of distances between timepoints per conditions
 ```{r}
-dtc <- distances %>%
+dtc <- distanceswu %>%
   filter(condizione1 == condizione2) %>%
   dplyr::rename(condizione = condizione1) %>% 
   group_by(condizione, timepoint1, timepoint2) %>%

@@ -20,6 +20,11 @@ source('R/loadQiimeData.R')
 
 ```{r QIIME data loading}
 gg_topi <- loadQiimeData()
+gg_topi.genus <- tax_glom(gg_topi,taxrank = "Genus")
+gg_topi.genus.relab <- transform_sample_counts(gg_topi.genus, function(x) x/sum(x))
+
+gg_topi.family <- tax_glom(gg_topi,taxrank = "Family")
+gg_topi.family.relab <- transform_sample_counts(gg_topi.family, function(x) x/sum(x))
 ```
 
 # Figure 3
@@ -84,8 +89,47 @@ ggplot(aes(Axis.1, Axis.2)) +
     gp=grid::gpar(col="black", fontsize=13)),  xmin = 0.15, xmax = .15, ymin = -.05, ymax = -.05)
 ```
 
-## Panel C
+## Panel C: Differential abundance analysis highlighted Bacteroidales S24/7 and Lacnospiraceae as most differential abunant families.
+```{r DESeq2 loading, cache=TRUE}
+pds_genus <- phyloseq_to_deseq2(gg_topi.genus, design = ~timepoint)
+dds_genus <- DESeq2::DESeq(pds_genus, parallel = TRUE, quiet = TRUE)
+res_genus <- DESeq2::results(dds_genus, contrast = c('timepoint', 'T2','T3'), alpha = 0.05)
+res.filt_genus <- res_genus[!is.na(res_genus$padj),]
+res.filt_genus <- res.filt_genus[res.filt_genus$padj<0.05,]
+
+t23_samples_idx_genus <- grep('T2|T3', sample_names(gg_topi.genus.relab), perl = TRUE)
+
+genus_ab_t <- otu_table(gg_topi.genus.relab)[rownames(res.filt_genus), t23_samples_idx_genus] %>%
+            data.frame %>%
+            tibble::rownames_to_column("OTU") %>%
+            tidyr::gather_("SampleID", "Abundance", setdiff(colnames(.), "OTU")) %>%
+            mutate(timepoint=factor(stringr::str_sub(.$SampleID,12, 13)))
+```
+
 ```{r}
+lacno_bact_relabs <-genus_ab_t %>% bind_cols(data.frame(tax_table(gg_topi.genus.relab)[genus_ab_t$OTU,c('Phylum','Family','Genus')])) %>% filter(Family %in% c('Bacteroidales S24-7 group') | Genus %in% c('Lachnospiraceae NK4A136 group'))
+
+lacno_bact_relabs %>% group_by(timepoint, interaction(Family, Genus)) %>% dplyr::summarise(Mean=mean(Abundance), SD = sd(Abundance)) %>% knitr::kable()
+
+lacno_bact_relabs %>% 
+  mutate(Taxonomy=interaction(Family, Genus)) %>%
+  select(Abundance, Taxonomy, timepoint) %>%
+  group_by(timepoint, Taxonomy) %>%
+  summarise(Abundance = list(Abundance)) %>% 
+  spread(timepoint, Abundance) %>% 
+  group_by(Taxonomy) %>%
+  dplyr::summarise("Wilcoxon p value"=wilcox.test(unlist(T2), unlist(T3), paired = TRUE)$p.value)  %>% knitr::kable()
+```
+
+```{r}
+  lacno_bact_relabs %>%
+  ggplot() +
+    geom_boxplot(aes(timepoint, Abundance, fill=timepoint)) + 
+    facet_wrap(interaction(Family, Genus) ~ ., scales = "free_x", as.table= T) +
+    theme_minimal() +
+    guides(fill=FALSE) +
+    theme( strip.background = element_rect(colour = "transparent", fill = "transparent"),
+           strip.text.x = element_text(size=12))
 
 ```
 
