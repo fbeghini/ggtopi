@@ -93,6 +93,9 @@ ggplot(aes(Axis.1, Axis.2)) +
 ```{r DESeq2 loading, cache=TRUE}
 pds_genus <- phyloseq_to_deseq2(gg_topi.genus, design = ~timepoint)
 dds_genus <- DESeq2::DESeq(pds_genus, parallel = TRUE, quiet = TRUE)
+```
+
+```{r DESeq2 T2 T3}
 res_genus <- DESeq2::results(dds_genus, contrast = c('timepoint', 'T2','T3'), alpha = 0.05)
 res.filt_genus <- res_genus[!is.na(res_genus$padj),]
 res.filt_genus <- res.filt_genus[res.filt_genus$padj<0.05,]
@@ -133,8 +136,72 @@ lacno_bact_relabs %>%
 
 ```
 
-## Panel D
+## Panel D: Ordination centroids beta diversity all timepoints 
 ```{r}
+x <- ordinate(gg_topi, method = "MDS", distance = distwu, weighted = TRUE) %>% plot_ordination(gg_topi, ., justDF = TRUE)
+
+centroids <- aggregate(cbind(Axis.1, Axis.2)~timepoint, x, mean)
+
+ggplot(x, aes(Axis.1, Axis.2, color=timepoint)) +
+  geom_point(size = 0.8) +
+  geom_point(data=centroids, size = 4) + 
+  theme_minimal()
+```
+
+## Panel ?: Ordination beta diversity T3 vs T7
+```{r}
+metadata_2cat <- mappingfile[mappingfile$timepoint %in% c('T7','T3'),]
+distwu_2cat <- phyloseq::distance(subset_samples(gg_topi, timepoint %in% c('T7','T3')), "wunifrac")
+permanova <- vegan::adonis(formula = distwu_2cat ~ merge_timepoint, data = metadata_2cat)
+
+subset(ordwu, timepoint %in% c('T7','T3')) %>%
+ggplot(aes(Axis.1, Axis.2)) +
+  geom_point(aes(color=timepoint), size=3, alpha=.8) +
+  scale_color_brewer(name = "Timepoint", palette="Dark2") + 
+  theme_minimal() +
+  annotation_custom(grob = grid::textGrob(bquote(atop("p-value"==.(permanova$aov.tab$`Pr(>F)`[1]),R^2==.(signif(permanova$aov.tab$R2[1], 2)))), gp=grid::gpar(col="black", fontsize=10)),  xmin = 0, xmax = 0, ymin = .1, ymax = .1)
+```
+
+
+```{r, cache=TRUE}
+ggtopi_subs <-subset_samples(gg_topi, timepoint %in% c('T3','T7'))
+ggtopi_subs.relab <- transform_sample_counts(ggtopi_subs, function(x) x/sum(x))
+ggtopi_subs.genus <- tax_glom(ggtopi_subs,taxrank = "Genus")
+ggtopi_subs.genus.relab <- transform_sample_counts(ggtopi_subs.genus, function(x) x/sum(x))
+
+mmtx <- model.matrix(object = ~timepoint + timepoint:real_vaccine + timepoint:real_bifido + timepoint:real_vaccine:real_bifido, data = data.frame(ggtopi_subs@sam_data))
+idx <- which(apply(mmtx, 2, function(x) all(x==0)))
+mmtx <- mmtx[,-idx]
+
+pds_37 <- phyloseq_to_deseq2(ggtopi_subs, design = ~ timepoint + timepoint:real_vaccine + timepoint:real_bifido + timepoint:real_vaccine:real_bifido, ignoreRank = TRUE)
+dds_37 <- DESeq2::DESeq(pds_37, parallel = TRUE, quiet = TRUE, full = mmtx)
+
+pds_genus <- phyloseq_to_deseq2(ggtopi_subs.genus, design =  ~ timepoint + timepoint:real_vaccine + timepoint:real_bifido + timepoint:real_vaccine:real_bifido, ignoreRank = TRUE)
+dds_genus <- DESeq2::DESeq(pds_genus, parallel = TRUE, quiet = TRUE, full = mmtx)
+```
+## Panel E: Boxplot of abundance of significant genera from DESeq2 differential analysis
+```{r}
+res37 <- DESeq2::results(dds_genus, name = "timepointT7", alpha = 0.05)
+res37.filt <- res37[!is.na(res37$padj),]
+res37.filt <- res37.filt[res37.filt$padj<0.05,]
+
+t37_samples_idx <- grep('T7|T3', sample_names(ggtopi_subs), perl = TRUE)
+
+genus_ab_t <- otu_table(ggtopi_subs.genus.relab)[rownames(res37.filt), ] %>%
+            data.frame %>%
+            tibble::rownames_to_column("OTU") %>%
+            tidyr::gather_("SampleID", "Abundance", setdiff(colnames(.), "OTU")) %>%
+            mutate(timepoint=stringr::str_sub(.$SampleID,12, 13))
+
+genus_ab_t %>% 
+  
+  bind_cols(data.frame(tax_table(ggtopi_subs.genus.relab)[genus_ab_t$OTU,c('Phylum','Family','Genus')])) %>%
+ggplot() +
+  geom_boxplot(aes(reorder(interaction(Family, Genus), Abundance, FUN = median), Abundance, fill=timepoint)) + 
+  facet_grid(Phylum ~ ., scales = "free", space = "free_y", as.table= T)+
+  coord_flip() + 
+  theme(strip.background = element_rect(colour = "transparent", fill = "transparent"),
+      strip.text.y = element_text(angle = 0))
 
 ```
 
