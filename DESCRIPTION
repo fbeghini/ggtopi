@@ -1,0 +1,9 @@
+Package: cancervaccinemicrobiome
+Title: Analysis of 16S rRNA sequencing of microbiomes of mice with melanoma
+Version: 0.0.0.9000
+Authors@R: person("Francesco", "Beghini", email = "francesco.beghini@unitn.it", role = c("aut", "cre"))
+Description: Data analysis of QIIME 16S data.
+Depends: R (>= 3.5.1)
+License: 
+Encoding: UTF-8
+LazyData: true

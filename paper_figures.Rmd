@@ -1,0 +1,96 @@
+---
+title: "Paper figures"
+author: "Francesco Beghini"
+date: "January 6, 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(message = FALSE, warning = FALSE, paged.print=FALSE, echo=FALSE)
+knitr::opts_chunk$set(fig.width=12, fig.height=8) 
+library(phyloseq)
+library(magrittr)
+library(tidyverse)
+library(reshape2)
+library(ggsignif)
+library(DESeq2)
+
+source('R/loadQiimeData.R')
+```
+
+```{r QIIME data loading}
+gg_topi <- loadQiimeData()
+```
+
+# Figure 3
+## Panel A: Alpha diversity controls T1 vs T2 and pre and post challenge T2 vs T3 
+```{r Calculate alpha diversity}
+alpha_div <- estimate_richness(gg_topi) %>% bind_cols(data.frame(sample_data(gg_topi)))
+```
+
+```{r}
+filt_alpha <- alpha_div %>% 
+  filter(timepoint %in% c('T1', 'T2', 'T3')) %>%
+  select('Description','condizione','timepoint','Observed', 'se.chao1', 'Simpson', 'Shannon') %>%
+  rename('se.chao1' = 'Chao1') %>%
+  mutate(t=as.numeric(stringr::str_sub(timepoint,2,2))) %>% droplevels()
+
+ttest_res <- data.frame()
+for ( ts in list(c('T1','T2'), c('T2','T3')) ){
+  for( measure in c('Observed', 'Chao1', 'Simpson', 'Shannon') ){
+    ttest_res %<>% bind_rows( data.frame(Measure = measure,
+                                         Timepoint = paste(ts, collapse = ' vs '),
+                                         pvalue = with(filt_alpha %>% filter(timepoint %in% ts), t.test(as.formula(paste(measure, 't', sep = '~'))))$p.value))
+  }
+}
+```
+
+```{r}
+knitr::kable(ttest_res)
+```
+
+
+```{r Plot boxplot}
+filt_alpha %>%
+  melt(id.vars = c('Description','condizione','timepoint'), measure.vars =  c('Observed', 'Chao1', 'Simpson', 'Shannon')) %>%
+  ggplot() +
+  geom_boxplot(aes(timepoint, value)) +
+  xlab('Timepoint') +
+  ylab('Value') +
+  facet_grid(variable~.,scales = 'free_y') +
+  theme_minimal() +
+  theme( strip.background = element_rect(colour = "transparent", fill = "transparent"),
+           strip.text.y = element_text(angle = 0))
+```
+
+
+## Panel B: Beta diversity differences pre and post challange T2 vs T3
+```{r}
+distwu <- phyloseq::distance(gg_topi, "wunifrac")
+ordwu <-  ordinate(gg_topi, method = "MDS", distance = distwu, weighted = TRUE) %>% plot_ordination(gg_topi, ., justDF = TRUE)
+distanceswu <- calculate_pairwise_distances(distwu)
+metadata_2cat <- mappingfile[mappingfile$timepoint %in% c('T2','T3'),]
+distwu_2cat <- phyloseq::distance(subset_samples(gg_topi, timepoint %in% c('T2','T3')), "wunifrac")
+permanova <- vegan::adonis(formula = distwu_2cat ~ merge_timepoint, data = metadata_2cat)
+```
+
+```{r Plot ordination}
+subset(ordwu, timepoint %in% c('T2','T3')) %>%
+ggplot(aes(Axis.1, Axis.2)) +
+  geom_point(aes(color=timepoint), size=3, alpha=.8) +
+  scale_color_brewer(name = "Timepoint", palette="Dark2") + 
+  theme_minimal() +
+  annotation_custom(grob = grid::textGrob(label = bquote(atop("p-value"==.(permanova$aov.tab$`Pr(>F)`[1]),R^2==.(signif(permanova$aov.tab$R2[1], 2)))),
+    gp=grid::gpar(col="black", fontsize=13)),  xmin = 0.15, xmax = .15, ymin = -.05, ymax = -.05)
+```
+
+## Panel C
+```{r}
+
+```
+
+## Panel D
+```{r}
+
+```
+
