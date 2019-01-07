@@ -2,7 +2,9 @@
 title: "Paper figures"
 author: "Francesco Beghini"
 date: "January 6, 2019"
-output: html_document
+output: 
+  html_document: 
+    fig_caption: yes
 editor_options: 
   chunk_output_type: console
 ---
@@ -19,10 +21,12 @@ library(DESeq2)
 
 source('R/loadQiimeData.R')
 source('R/ggtheme.R')
+source('R/calculatePairwiseDistances.R')
 ```
 
-```{r QIIME data loading}
+```{r QIIME data loading, cache=TRUE}
 gg_topi <- loadQiimeData()
+mappingfile <- data.frame(sample_data(gg_topi))
 gg_topi.genus <- tax_glom(gg_topi,taxrank = "Genus")
 gg_topi.genus.relab <- transform_sample_counts(gg_topi.genus, function(x) x/sum(x))
 
@@ -32,7 +36,7 @@ gg_topi.family.relab <- transform_sample_counts(gg_topi.family, function(x) x/su
 
 # Figure 3
 ## Panel A: Alpha diversity controls T1 vs T2 and pre and post challenge T2 vs T3 
-```{r Calculate alpha diversity}
+```{r Calculate alpha diversity, cache=TRUE}
 alpha_div <- estimate_richness(gg_topi) %>% bind_cols(data.frame(sample_data(gg_topi)))
 ```
 
@@ -73,10 +77,11 @@ filt_alpha %>%
 
 
 ## Panel B: Beta diversity differences pre and post challange T2 vs T3
-```{r}
+```{r, cache=TRUE}
 distwu <- phyloseq::distance(gg_topi, "wunifrac")
 ordwu <-  ordinate(gg_topi, method = "MDS", distance = distwu, weighted = TRUE) %>% plot_ordination(gg_topi, ., justDF = TRUE)
 distanceswu <- calculate_pairwise_distances(distwu)
+distancesbc <- calculate_pairwise_distances(phyloseq::distance(gg_topi, "bray"))
 metadata_2cat <- mappingfile[mappingfile$timepoint %in% c('T2','T3'),]
 distwu_2cat <- phyloseq::distance(subset_samples(gg_topi, timepoint %in% c('T2','T3')), "wunifrac")
 permanova <- vegan::adonis(formula = distwu_2cat ~ merge_timepoint, data = metadata_2cat)
@@ -162,7 +167,7 @@ ggplot(aes(Axis.1, Axis.2)) +
   geom_point(aes(color=timepoint), size=3, alpha=.8) +
   scale_color_brewer(name = "Timepoint", palette="Dark2") + 
   theme_minimal() +
-  annotation_custom(grob = grid::textGrob(bquote(atop("p-value"==.(permanova$aov.tab$`Pr(>F)`[1]),R^2==.(signif(permanova$aov.tab$R2[1], 2)))), gp=grid::gpar(col="black", fontsize=10)),  xmin = 0, xmax = 0, ymin = .1, ymax = .1)
+  annotation_custom(grob = grid::textGrob(bquote(atop(italic("p-value")==.(permanova$aov.tab$`Pr(>F)`[1]),italic(R^2)==.(signif(permanova$aov.tab$R2[1], 2)))), gp=grid::gpar(col="black", fontsize=10)),  xmin = 0, xmax = 0, ymin = .1, ymax = .1)
 ```
 
 
@@ -231,7 +236,45 @@ otu_table(gg_topi.genus.relab)[c(idx_247,idx_lachno),] %>%
   mutate(taxlab = ifelse(stringr::str_detect(Genus,'uncultured'), paste('Uncultured',Family,sep = ' '), paste(Genus))) %>%
   ggplot() +
   geom_boxplot(aes(timepoint, Abundance, fill=condition)) +
-  scale_fill_brewer(name = "Timepoint", palette="Dark2") +
-  facet_grid(taxlab ~ ., scales = "free", space = "free_x", as.table= T) +
-  theme_cm()
+  scale_fill_manual(name = "Treatment", values = c("#a6d854","#ffd92f","#66c2a5","#fc8d62")) +
+  facet_wrap(facets = 'taxlab', nrow = 2, scales = "free", shrink = FALSE) +
+  theme_cm() +
+  ylab('Relative abundance') +
+  xlab('Timepoint')
+```
+
+## Panel G: Scatterplot of tumor size and difference of \\beta diversity 
+```{r}
+brayc_ds <- distancesbc %>% 
+  dplyr::filter(topo1==topo2) %>%
+  dplyr::filter(timepoint1==3) %>%
+  dplyr::filter(timepoint2>4) %>%
+  dplyr::select(cols, timepoint2, value) %>%
+  dplyr::left_join(mappingfile, by=c('cols' = 'Description'))
+
+ds_corr_braycf <- data.frame()
+for(x in unique(brayc_ds$timepoint2)){
+  # for(y in levels(brayc_ds$condizione)){
+    tmp_res <- with(brayc_ds %>% filter(timepoint2==x), cor.test(value, tumor_mass))
+    ds_corr_braycf %<>% bind_rows(data.frame(timepoint = paste('T', x, '-T3',sep = ''), corr = signif(tmp_res$estimate,2), pval = signif(tmp_res$p.value,2), label = paste('p-value==',signif(tmp_res$p.value,2),'~italic(r)==', signif(tmp_res$estimate,2))))
+}
+```
+
+```{r corr tumor braycurtis}
+distancesbc %>% 
+  dplyr::filter(topo1==topo2) %>%
+  dplyr::filter(timepoint1==3) %>%
+  dplyr::filter(timepoint2>4) %>%
+  dplyr::select(cols, timepoint2, value) %>%
+  dplyr::left_join(mappingfile, by=c('cols' = 'Description')) %>%
+  mutate(timepoint = paste('T',timepoint2,'-T3',sep = '')) %>%
+  ggplot(aes(value,tumor_mass)) +
+  geom_point() +
+  facet_wrap(facets = 'timepoint', ncol = 1) +
+  geom_line(stat='smooth', method = 'lm', color='red', alpha=0.7, size=.7) + 
+  ylab(bquote('Tumor mass'~( mm^3))) +
+  xlab('Bray Curtis distance') +
+  theme_cm() +
+  geom_text(data = ds_corr_braycf, aes(x=0.4,y=2500, label=label), parse = TRUE, inherit.aes = FALSE)
+
 ```

@@ -10,5 +10,5 @@ theme_cm <- function(){
   theme(text = element_text(family = "Montserrat", size = 10, colour = "black"),
         axis.text = element_text(family = "Montserrat", size = 10, colour = "black"),
         strip.background = element_rect(colour = "transparent", fill = "transparent"),
-        strip.text = element_text(angle = -1, family = "Montserrat", size = 10, colour = "black"))
+        strip.text = element_text(family = "Montserrat", size = 12, colour = "black"))
 }
