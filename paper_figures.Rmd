@@ -11,7 +11,7 @@ editor_options:
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(message = FALSE, warning = FALSE, paged.print=FALSE, echo=FALSE)
-knitr::opts_chunk$set(fig.width=12, fig.height=8) 
+knitr::opts_chunk$set(fig.width=8, fig.height=6) 
 library(phyloseq)
 library(magrittr)
 library(tidyverse)
@@ -35,7 +35,6 @@ gg_topi.family.relab <- transform_sample_counts(gg_topi.family, function(x) x/su
 ```
 
 # Figure 3
-## Panel A: Alpha diversity controls T1 vs T2 and pre and post challenge T2 vs T3 
 ```{r Calculate alpha diversity, cache=TRUE}
 alpha_div <- estimate_richness(gg_topi) %>% bind_cols(data.frame(sample_data(gg_topi)))
 ```
@@ -62,7 +61,7 @@ knitr::kable(ttest_res)
 ```
 
 
-```{r Plot boxplot}
+```{r Plot boxplot, fig.cap='Fig 3A: Alpha diversity controls T1 vs T2 and pre and post challenge T2 vs T3'}
 filt_alpha %>%
   melt(id.vars = c('Description','condizione','timepoint'), measure.vars =  c('Observed', 'Chao1', 'Simpson', 'Shannon')) %>%
   ggplot() +
@@ -76,7 +75,6 @@ filt_alpha %>%
 ```
 
 
-## Panel B: Beta diversity differences pre and post challange T2 vs T3
 ```{r, cache=TRUE}
 distwu <- phyloseq::distance(gg_topi, "wunifrac")
 ordwu <-  ordinate(gg_topi, method = "MDS", distance = distwu, weighted = TRUE) %>% plot_ordination(gg_topi, ., justDF = TRUE)
@@ -87,17 +85,16 @@ distwu_2cat <- phyloseq::distance(subset_samples(gg_topi, timepoint %in% c('T2',
 permanova <- vegan::adonis(formula = distwu_2cat ~ merge_timepoint, data = metadata_2cat)
 ```
 
-```{r Plot ordination}
+```{r Plot ordination, fig.cap="Fig 3B: Beta diversity differences pre and post challange T2 vs T3"}
 subset(ordwu, timepoint %in% c('T2','T3')) %>%
 ggplot(aes(Axis.1, Axis.2)) +
   geom_point(aes(color=timepoint), size=3, alpha=.8) +
   scale_color_brewer(name = "Timepoint", palette="Dark2") + 
-  theme_minimal() +
-  annotation_custom(grob = grid::textGrob(label = bquote(atop("p-value"==.(permanova$aov.tab$`Pr(>F)`[1]),R^2==.(signif(permanova$aov.tab$R2[1], 2)))),
+  theme_cm() +
+  annotation_custom(grob = grid::textGrob(label = bquote(atop("p-value"==.(permanova$aov.tab$`Pr(>F)`[1]),italic(R^2)==.(signif(permanova$aov.tab$R2[1], 2)))),
     gp=grid::gpar(col="black", fontsize=13)),  xmin = 0.15, xmax = .15, ymin = -.05, ymax = -.05)
 ```
 
-## Panel C: Differential abundance analysis highlighted Bacteroidales S24/7 and Lacnospiraceae as most differential abunant families.
 ```{r DESeq2 loading, cache=TRUE}
 pds_genus <- phyloseq_to_deseq2(gg_topi.genus, design = ~timepoint)
 dds_genus <- DESeq2::DESeq(pds_genus, parallel = TRUE, quiet = TRUE)
@@ -132,7 +129,7 @@ lacno_bact_relabs %>%
   dplyr::summarise("Wilcoxon p value"=wilcox.test(unlist(T2), unlist(T3), paired = TRUE)$p.value)  %>% knitr::kable()
 ```
 
-```{r}
+```{r fig.cap="Fig 3C: Differential abundance analysis highlighted Bacteroidales S24/7 and Lacnospiraceae as most differential abunant families."}
   lacno_bact_relabs %>%
   ggplot() +
     geom_boxplot(aes(timepoint, Abundance, fill=timepoint)) + 
@@ -144,8 +141,7 @@ lacno_bact_relabs %>%
 
 ```
 
-## Panel D: Ordination centroids beta diversity all timepoints 
-```{r}
+```{r fig.cap="Fig 3D: Ordination centroids beta diversity all timepoints"}
 x <- ordinate(gg_topi, method = "MDS", distance = distwu, weighted = TRUE) %>% plot_ordination(gg_topi, ., justDF = TRUE)
 
 centroids <- aggregate(cbind(Axis.1, Axis.2)~timepoint, x, mean)
@@ -188,7 +184,6 @@ pds_genus <- phyloseq_to_deseq2(ggtopi_subs.genus, design =  ~ timepoint + timep
 dds_genus <- DESeq2::DESeq(pds_genus, parallel = TRUE, quiet = TRUE, full = mmtx)
 ```
 
-## Panel E: Boxplot of abundance of significant genera from DESeq2 differential analysis. Genera with median below 1% are filtered
 ```{r}
 res37 <- DESeq2::results(dds_genus, name = "timepointT7", alpha = 0.05)
 res37.filt <- res37[!is.na(res37$padj),]
@@ -202,6 +197,9 @@ genus_ab_t <- otu_table(ggtopi_subs.genus.relab)[rownames(res37.filt), ] %>%
             tidyr::gather_("SampleID", "Abundance", setdiff(colnames(.), "OTU")) %>%
             mutate(timepoint=stringr::str_sub(.$SampleID,12, 13))
 
+```
+
+```{r fig.cap="Fig 3E: Boxplot of abundance of significant genera from DESeq2 differential analysis. Genera with median below 1% are filtered"}
 genus_ab_t %>%
   bind_cols(data.frame(tax_table(ggtopi_subs.genus.relab)[genus_ab_t$OTU,c('Phylum','Family','Genus')])) %>%
   filter(OTU %in% (genus_ab_t %>%
@@ -221,8 +219,7 @@ ggplot() +
   theme_cm()
 ```
 
-## Panel F: Abundance of Bacteroidales 24/7 and Lachnospiraceae NK4A136 through timepoints and treatment
-```{r}
+```{r fig.cap="Fig 3 F: Abundance of Bacteroidales 24/7 and Lachnospiraceae NK4A136 through timepoints and treatment"}
 idx_247 <- which(tax_table(gg_topi.genus.relab)[,'Family'] == "Bacteroidales S24-7 group" & tax_table(gg_topi.genus.relab)[,'Genus'] == "uncultured bacterium")
 idx_lachno <- which(tax_table(gg_topi.genus.relab)[,'Genus'] == "Lachnospiraceae NK4A136 group" )
 
@@ -243,7 +240,7 @@ otu_table(gg_topi.genus.relab)[c(idx_247,idx_lachno),] %>%
   xlab('Timepoint')
 ```
 
-## Panel G: Scatterplot of tumor size and difference of \\beta diversity 
+
 ```{r}
 brayc_ds <- distancesbc %>% 
   dplyr::filter(topo1==topo2) %>%
@@ -260,7 +257,7 @@ for(x in unique(brayc_ds$timepoint2)){
 }
 ```
 
-```{r corr tumor braycurtis}
+```{r corr tumor braycurtis, fig.cap="Fig 3 G: Scatterplot of tumor size and difference of beta diversity "}
 distancesbc %>% 
   dplyr::filter(topo1==topo2) %>%
   dplyr::filter(timepoint1==3) %>%
