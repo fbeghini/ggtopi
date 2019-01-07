@@ -668,6 +668,7 @@ with(mass_247 %>%
   mutate(T3_7 = abs(T7-T3)),
   cor.test(T3_7,tumor_mass))
 
+```
 
 ## Ordination: T3 vs T7 with tumor size
 ```{r}

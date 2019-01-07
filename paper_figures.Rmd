@@ -3,6 +3,8 @@ title: "Paper figures"
 author: "Francesco Beghini"
 date: "January 6, 2019"
 output: html_document
+editor_options: 
+  chunk_output_type: console
 ---
 
 ```{r setup, include=FALSE}
@@ -16,6 +18,7 @@ library(ggsignif)
 library(DESeq2)
 
 source('R/loadQiimeData.R')
+source('R/ggtheme.R')
 ```
 
 ```{r QIIME data loading}
@@ -179,7 +182,8 @@ dds_37 <- DESeq2::DESeq(pds_37, parallel = TRUE, quiet = TRUE, full = mmtx)
 pds_genus <- phyloseq_to_deseq2(ggtopi_subs.genus, design =  ~ timepoint + timepoint:real_vaccine + timepoint:real_bifido + timepoint:real_vaccine:real_bifido, ignoreRank = TRUE)
 dds_genus <- DESeq2::DESeq(pds_genus, parallel = TRUE, quiet = TRUE, full = mmtx)
 ```
-## Panel E: Boxplot of abundance of significant genera from DESeq2 differential analysis
+
+## Panel E: Boxplot of abundance of significant genera from DESeq2 differential analysis. Genera with median below 1% are filtered
 ```{r}
 res37 <- DESeq2::results(dds_genus, name = "timepointT7", alpha = 0.05)
 res37.filt <- res37[!is.na(res37$padj),]
@@ -193,15 +197,41 @@ genus_ab_t <- otu_table(ggtopi_subs.genus.relab)[rownames(res37.filt), ] %>%
             tidyr::gather_("SampleID", "Abundance", setdiff(colnames(.), "OTU")) %>%
             mutate(timepoint=stringr::str_sub(.$SampleID,12, 13))
 
-genus_ab_t %>% 
-  
+genus_ab_t %>%
   bind_cols(data.frame(tax_table(ggtopi_subs.genus.relab)[genus_ab_t$OTU,c('Phylum','Family','Genus')])) %>%
+  filter(OTU %in% (genus_ab_t %>%
+  group_by(OTU, timepoint) %>%
+  summarise(median=median(Abundance)) %>%
+  group_by(OTU) %>%
+  summarise(filt=min(median)>0.01) %>% filter(filt==TRUE))$OTU) %>%
+  filter(Phylum != "Unassigned") %>%
+  mutate(taxlab = ifelse(stringr::str_detect(Genus,'uncultured'), paste('Uncultured',Family,sep = ' '), paste(Genus))) %>%
 ggplot() +
-  geom_boxplot(aes(reorder(interaction(Family, Genus), Abundance, FUN = median), Abundance, fill=timepoint)) + 
-  facet_grid(Phylum ~ ., scales = "free", space = "free_y", as.table= T)+
-  coord_flip() + 
-  theme(strip.background = element_rect(colour = "transparent", fill = "transparent"),
-      strip.text.y = element_text(angle = 0))
-
+  geom_boxplot(aes(reorder(taxlab, Abundance, FUN = median), Abundance, fill=timepoint)) +
+  facet_grid(Phylum ~ ., scales = "free", space = "free_y", as.table= T) +
+  scale_fill_brewer(name = "Timepoint", palette="Dark2") +
+  coord_flip() +
+  xlab('') +
+  ylab("Relative abundance") +
+  theme_cm()
 ```
 
+## Panel F: Abundance of Bacteroidales 24/7 and Lachnospiraceae NK4A136 through timepoints and treatment
+```{r}
+idx_247 <- which(tax_table(gg_topi.genus.relab)[,'Family'] == "Bacteroidales S24-7 group" & tax_table(gg_topi.genus.relab)[,'Genus'] == "uncultured bacterium")
+idx_lachno <- which(tax_table(gg_topi.genus.relab)[,'Genus'] == "Lachnospiraceae NK4A136 group" )
+
+otu_table(gg_topi.genus.relab)[c(idx_247,idx_lachno),] %>%
+  data.frame %>%
+  tibble::rownames_to_column("OTU") %>%
+  tidyr::gather_("SampleID", "Abundance", setdiff(colnames(.), "OTU")) %>%
+  mutate(timepoint=stringr::str_sub(.$SampleID,12, 13)) %>%
+  mutate(condition= stringr::str_sub(.$SampleID,4, 6)) %>%
+  bind_cols(data.frame(tax_table(gg_topi.genus.relab)[.$OTU,c('Phylum','Family','Genus')])) %>%
+  mutate(taxlab = ifelse(stringr::str_detect(Genus,'uncultured'), paste('Uncultured',Family,sep = ' '), paste(Genus))) %>%
+  ggplot() +
+  geom_boxplot(aes(timepoint, Abundance, fill=condition)) +
+  scale_fill_brewer(name = "Timepoint", palette="Dark2") +
+  facet_grid(taxlab ~ ., scales = "free", space = "free_x", as.table= T) +
+  theme_cm()
+```
