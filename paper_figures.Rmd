@@ -47,11 +47,11 @@ filt_alpha <- alpha_div %>%
   mutate(t=as.numeric(stringr::str_sub(timepoint,2,2))) %>% droplevels()
 
 ttest_res <- data.frame()
-for ( ts in list(c('T1','T2'), c('T2','T3')) ){
+for ( ts in combn(levels(filt_alpha$timepoint), 2, simplify = FALSE)){
   for( measure in c('Observed', 'Chao1', 'Simpson', 'Shannon') ){
     ttest_res %<>% bind_rows( data.frame(Measure = measure,
                                          Timepoint = paste(ts, collapse = ' vs '),
-                                         pvalue = with(filt_alpha %>% filter(timepoint %in% ts), t.test(as.formula(paste(measure, 't', sep = '~'))))$p.value))
+                                         pvalue = with(filt_alpha %>% filter(timepoint %in% ts), t.test(as.formula(paste(measure, 't', sep = '~')), alternative ='two.sided'))$p.value))
   }
 }
 ```
@@ -61,19 +61,32 @@ knitr::kable(ttest_res)
 ```
 
 
-```{r Plot boxplot, fig.cap='Fig 3A: Alpha diversity controls T1 vs T2 and pre and post challenge T2 vs T3'}
+```{r fig3a, fig.cap='Fig 3A: Alpha diversity controls T1 vs T2 and pre and post challenge T2 vs T3', fig.height=5, fig.width=5}
+filt_alpha %>%
+  melt(id.vars = c('Description','condizione','timepoint'), measure.vars =  c('Chao1')) %>%
+  ggplot(aes(timepoint, value, fill=timepoint)) +
+  geom_boxplot(width=0.8) +
+  xlab('Timepoint') +
+  ylab('Chao1 Index') +
+  scale_fill_manual(name = "Timepoint", values = cm_palette) +
+  ggsignif::geom_signif(comparisons = list(c('T1','T3')), y_position = 240, tip_length = 0, test = 't.test') +
+  ggsignif::geom_signif(comparisons = list(c('T2','T3')), y_position = 230, tip_length = 0, test = 't.test') +
+  guides(fill=FALSE) +
+  theme_cm()
+```
+
+```{r supplfig3a, fig.cap='Fig 3A: Alpha diversity controls T1 vs T2 and pre and post challenge T2 vs T3'}
 filt_alpha %>%
   melt(id.vars = c('Description','condizione','timepoint'), measure.vars =  c('Observed', 'Chao1', 'Simpson', 'Shannon')) %>%
   ggplot() +
-  geom_boxplot(aes(timepoint, value)) +
+  geom_boxplot(aes(timepoint, value, fill=timepoint)) +
+  scale_fill_manual(name = "Timepoint", values = cm_palette) +
   xlab('Timepoint') +
   ylab('Value') +
   facet_grid(variable~.,scales = 'free_y') +
-  theme_minimal() +
-  theme( strip.background = element_rect(colour = "transparent", fill = "transparent"),
-           strip.text.y = element_text(angle = 0))
+  guides(fill=FALSE) +
+  theme_cm()
 ```
-
 
 ```{r, cache=TRUE}
 distwu <- phyloseq::distance(gg_topi, "wunifrac")
@@ -89,10 +102,10 @@ permanova <- vegan::adonis(formula = distwu_2cat ~ merge_timepoint, data = metad
 subset(ordwu, timepoint %in% c('T2','T3')) %>%
 ggplot(aes(Axis.1, Axis.2)) +
   geom_point(aes(color=timepoint), size=3, alpha=.8) +
-  scale_color_brewer(name = "Timepoint", palette="Dark2") + 
+  scale_color_manual(name = "Timepoint", values = cm_palette[c(2,3)]) +
   theme_cm() +
   annotation_custom(grob = grid::textGrob(label = bquote(atop("p-value"==.(permanova$aov.tab$`Pr(>F)`[1]),italic(R^2)==.(signif(permanova$aov.tab$R2[1], 2)))),
-    gp=grid::gpar(col="black", fontsize=13)),  xmin = 0.15, xmax = .15, ymin = -.05, ymax = -.05)
+    gp=grid::gpar(col="black", fontsize=13)),  xmin = 0.15, xmax = .15, ymin = .05, ymax = .05)
 ```
 
 ```{r DESeq2 loading, cache=TRUE}
@@ -133,23 +146,29 @@ lacno_bact_relabs %>%
   lacno_bact_relabs %>%
   ggplot() +
     geom_boxplot(aes(timepoint, Abundance, fill=timepoint)) + 
+    scale_fill_manual(name = "Timepoint", values = cm_palette[c(2,3)]) +
     facet_wrap(interaction(Family, Genus) ~ ., scales = "free_x", as.table= T) +
-    theme_minimal() +
     guides(fill=FALSE) +
-    theme( strip.background = element_rect(colour = "transparent", fill = "transparent"),
-           strip.text.x = element_text(size=12))
-
+    theme_cm()
 ```
 
 ```{r fig.cap="Fig 3D: Ordination centroids beta diversity all timepoints"}
-x <- ordinate(gg_topi, method = "MDS", distance = distwu, weighted = TRUE) %>% plot_ordination(gg_topi, ., justDF = TRUE)
+not12 <- gg_topi %>%
+  subset_samples(!(timepoint %in% c("T1", "T2")))
+
+x<-not12 %>%
+  ordinate(method = "MDS", distance =  phyloseq::distance(not12, "wunifrac"), weighted = TRUE) %>% plot_ordination(not12, ., justDF = TRUE)
 
 centroids <- aggregate(cbind(Axis.1, Axis.2)~timepoint, x, mean)
-
+centroids[1:4,c('X2','Y2')] <- centroids[-1,c(2:3)]
 ggplot(x, aes(Axis.1, Axis.2, color=timepoint)) +
-  geom_point(size = 0.8) +
+  geom_point(size = 0.8, alpha=0.7) +
   geom_point(data=centroids, size = 4) + 
-  theme_minimal()
+  geom_segment(aes(x=Axis.1, y=Axis.2, xend=X2, yend=Y2), 
+               arrow = arrow(length = unit(0.1,'inches')),
+               data=centroids, group="1") + 
+  scale_color_manual(name = "Timepoint", values = cm_palette[-c(1,2)]) +
+  theme_cm()
 ```
 
 ## Panel ?: Ordination beta diversity T3 vs T7
@@ -161,7 +180,7 @@ permanova <- vegan::adonis(formula = distwu_2cat ~ merge_timepoint, data = metad
 subset(ordwu, timepoint %in% c('T7','T3')) %>%
 ggplot(aes(Axis.1, Axis.2)) +
   geom_point(aes(color=timepoint), size=3, alpha=.8) +
-  scale_color_brewer(name = "Timepoint", palette="Dark2") + 
+  scale_color_manual(name = "Timepoint", values = cm_palette[c(4,7)])+
   theme_minimal() +
   annotation_custom(grob = grid::textGrob(bquote(atop(italic("p-value")==.(permanova$aov.tab$`Pr(>F)`[1]),italic(R^2)==.(signif(permanova$aov.tab$R2[1], 2)))), gp=grid::gpar(col="black", fontsize=10)),  xmin = 0, xmax = 0, ymin = .1, ymax = .1)
 ```
@@ -195,11 +214,11 @@ genus_ab_t <- otu_table(ggtopi_subs.genus.relab)[rownames(res37.filt), ] %>%
             data.frame %>%
             tibble::rownames_to_column("OTU") %>%
             tidyr::gather_("SampleID", "Abundance", setdiff(colnames(.), "OTU")) %>%
-            mutate(timepoint=stringr::str_sub(.$SampleID,12, 13))
+            mutate(timepoint=factor(stringr::str_sub(.$SampleID,12, 13)))
 
 ```
 
-```{r fig.cap="Fig 3E: Boxplot of abundance of significant genera from DESeq2 differential analysis. Genera with median below 1% are filtered"}
+```{r fig3E, fig.cap="Fig 3E: Boxplot of abundance of significant genera from DESeq2 differential analysis. Genera with median below 1% are filtered"}
 genus_ab_t %>%
   bind_cols(data.frame(tax_table(ggtopi_subs.genus.relab)[genus_ab_t$OTU,c('Phylum','Family','Genus')])) %>%
   filter(OTU %in% (genus_ab_t %>%
@@ -210,16 +229,34 @@ genus_ab_t %>%
   filter(Phylum != "Unassigned") %>%
   mutate(taxlab = ifelse(stringr::str_detect(Genus,'uncultured'), paste('Uncultured',Family,sep = ' '), paste(Genus))) %>%
 ggplot() +
-  geom_boxplot(aes(reorder(taxlab, Abundance, FUN = median), Abundance, fill=timepoint)) +
+  geom_boxplot(aes(reorder(taxlab, Abundance, FUN = median), Abundance, fill=timepoint),  position = position_dodge(-.85)) +
   facet_grid(Phylum ~ ., scales = "free", space = "free_y", as.table= T) +
-  scale_fill_brewer(name = "Timepoint", palette="Dark2") +
+  scale_fill_manual(name = "Timepoint", values = cm_palette[c(3,7)]) +
   coord_flip() +
   xlab('') +
   ylab("Relative abundance") +
   theme_cm()
 ```
 
-```{r fig.cap="Fig 3 F: Abundance of Bacteroidales 24/7 and Lachnospiraceae NK4A136 through timepoints and treatment"}
+```{r supplfig3E, fig.cap="Fig 3E: Boxplot of abundance of significant genera from DESeq2 differential analysis"}
+genus_ab_t %>%
+  bind_cols(data.frame(tax_table(ggtopi_subs.genus.relab)[genus_ab_t$OTU,c('Phylum','Family','Genus')])) %>%
+  filter(Phylum != "Unassigned") %>%
+  mutate(taxlab = ifelse(stringr::str_detect(Genus,'uncultured'), paste('Uncultured',Family,sep = ' '), paste(Genus))) %>%
+ggplot() +
+  geom_boxplot(aes(reorder(taxlab, Abundance, FUN = median), Abundance, fill=timepoint),  position = position_dodge(-.85)) +
+  facet_grid(Phylum ~ ., scales = "free", space = "free_y", as.table= T) +
+  scale_fill_manual(name = "Timepoint", values = cm_palette[c(3,7)]) +
+  coord_flip() +
+  scale_y_log10() +
+  xlab('') +
+  ylab("Relative abundance") +
+  theme_cm() +
+  theme(strip.text.y = element_text(angle = 360),
+        legend.position = "bottom")
+```
+
+```{r fig3F, fig.cap="Fig 3 F: Abundance of Bacteroidales 24/7 and Lachnospiraceae NK4A136 through timepoints and treatment"}
 idx_247 <- which(tax_table(gg_topi.genus.relab)[,'Family'] == "Bacteroidales S24-7 group" & tax_table(gg_topi.genus.relab)[,'Genus'] == "uncultured bacterium")
 idx_lachno <- which(tax_table(gg_topi.genus.relab)[,'Genus'] == "Lachnospiraceae NK4A136 group" )
 
@@ -231,15 +268,49 @@ otu_table(gg_topi.genus.relab)[c(idx_247,idx_lachno),] %>%
   mutate(condition= stringr::str_sub(.$SampleID,4, 6)) %>%
   bind_cols(data.frame(tax_table(gg_topi.genus.relab)[.$OTU,c('Phylum','Family','Genus')])) %>%
   mutate(taxlab = ifelse(stringr::str_detect(Genus,'uncultured'), paste('Uncultured',Family,sep = ' '), paste(Genus))) %>%
-  ggplot() +
+ggplot() +
   geom_boxplot(aes(timepoint, Abundance, fill=condition)) +
   scale_fill_manual(name = "Treatment", values = c("#a6d854","#ffd92f","#66c2a5","#fc8d62")) +
+  ggsignif::geom_signif(comparisons = list(c('T2','T3')), y_position = 0.5, tip_length = 0, test = 't.test') +
   facet_wrap(facets = 'taxlab', nrow = 2, scales = "free", shrink = FALSE) +
   theme_cm() +
   ylab('Relative abundance') +
   xlab('Timepoint')
 ```
 
+```{r}
+k<- otu_table(gg_topi.genus.relab)[c(idx_247,idx_lachno),] %>%
+   data.frame %>%
+   tibble::rownames_to_column("OTU") %>%
+   tidyr::gather_("SampleID", "Abundance", setdiff(colnames(.), "OTU")) %>%
+   mutate(timepoint=stringr::str_sub(.$SampleID,12, 13)) %>%
+   mutate(condition= stringr::str_sub(.$SampleID,4, 6)) %>%
+   group_by(timepoint, condition, OTU) %>%
+   summarise(Abundance = list(Abundance)) %>%
+   spread(timepoint, Abundance)
+
+abs_test <- data.frame() 
+for(c in unique(k$condition)){
+  for(o in unique(k$OTU)){
+    for(t in combn(colnames(k)[-c(1:2)], 2, simplify = FALSE)){
+      l <-k %>%
+        filter(condition == c & OTU == o) %>%
+        select(t)
+      res <- t.test(unlist(l[,2]),unlist(l[,3]))
+      abs_test %<>% bind_rows( data.frame( Condition = c,
+                                           OTU = o,
+                                           Timepoint = paste(t, collapse = ' vs '),
+                                           p.value = signif(res$p.value,3),
+                                           Direction = sign(diff(res$estimate))
+                                         )
+                             )
+    }
+  }
+}
+```
+```{r}
+knitr::kable(abs_test)
+```
 
 ```{r}
 brayc_ds <- distancesbc %>% 
@@ -253,11 +324,12 @@ ds_corr_braycf <- data.frame()
 for(x in unique(brayc_ds$timepoint2)){
   # for(y in levels(brayc_ds$condizione)){
     tmp_res <- with(brayc_ds %>% filter(timepoint2==x), cor.test(value, tumor_mass))
-    ds_corr_braycf %<>% bind_rows(data.frame(timepoint = paste('T', x, '-T3',sep = ''), corr = signif(tmp_res$estimate,2), pval = signif(tmp_res$p.value,2), label = paste('p-value==',signif(tmp_res$p.value,2),'~italic(r)==', signif(tmp_res$estimate,2))))
+    ds_corr_braycf %<>% bind_rows(data.frame(timepoint = paste('T', x, '-T3',sep = ''), corr = signif(tmp_res$estimate,2), pval = signif(tmp_res$p.value,2), label = paste('p=',signif(tmp_res$p.value,2),'\nr=', signif(tmp_res$estimate,2), sep = '')))
 }
+ds_corr_braycf[,c('x','y')] <- list(c(.45,.45,.45),c(300,650,2000))
 ```
 
-```{r corr tumor braycurtis, fig.cap="Fig 3 G: Scatterplot of tumor size and difference of beta diversity "}
+```{r fig3G, corr tumor braycurtis, fig.cap="Fig 3 G: Scatterplot of tumor size and difference of beta diversity "}
 distancesbc %>% 
   dplyr::filter(topo1==topo2) %>%
   dplyr::filter(timepoint1==3) %>%
@@ -267,11 +339,31 @@ distancesbc %>%
   mutate(timepoint = paste('T',timepoint2,'-T3',sep = '')) %>%
   ggplot(aes(value,tumor_mass)) +
   geom_point() +
-  facet_wrap(facets = 'timepoint', ncol = 1) +
+  facet_wrap(facets = 'timepoint', nrow = 1, shrink = TRUE, scales = 'free_y') +
   geom_line(stat='smooth', method = 'lm', color='red', alpha=0.7, size=.7) + 
   ylab(bquote('Tumor mass'~( mm^3))) +
   xlab('Bray Curtis distance') +
   theme_cm() +
-  geom_text(data = ds_corr_braycf, aes(x=0.4,y=2500, label=label), parse = TRUE, inherit.aes = FALSE)
+  geom_text(data = ds_corr_braycf, aes(x=x,y=y, label=label), inherit.aes = FALSE)
+```
+
+
+```{r corr tumor braycurtis, fig.cap="Fig 3I: Scatterplot of tumor size and difference of beta diversity "}
+
+otu_table(gg_topi.genus.relab)[idx_247,] %>%
+  data.frame %>%
+  tibble::rownames_to_column("OTU") %>%
+  tidyr::gather_("SampleID", "Abundance", setdiff(colnames(.), "OTU")) %>%
+  mutate(timepoint=stringr::str_sub(.$SampleID,12, 13)) %>%
+  mutate(condition= stringr::str_sub(.$SampleID,4, 6)) %>%
+  filter(timepoint %in% c('T3','T7')) %>%
+  select(-SampleID, -OTU) %>%
+  group_by(condition) %>%
+  summarise(Abundance = list(Abundance)) %>%
+  spread(condition, Abundance)
+
+
+  bind_cols(data.frame(tax_table(gg_topi.genus.relab)[.$OTU,c('Phylum','Family','Genus')])) %>%
+  mutate(taxlab = ifelse(stringr::str_detect(Genus,'uncultured'), paste('Uncultured',Family,sep = ' '), paste(Genus)))
 
 ```
