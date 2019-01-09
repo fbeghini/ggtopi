@@ -75,7 +75,7 @@ filt_alpha %>%
   theme_cm()
 ```
 
-```{r supplfig3a, fig.cap='Fig 3A: Alpha diversity controls T1 vs T2 and pre and post challenge T2 vs T3'}
+```{r supplfig3a, fig.cap='Fig 3A: Alpha diversity controls T1 vs T2 and pre and post challenge T2 vs T3', fig.dim = c(5,5)}
 filt_alpha %>%
   melt(id.vars = c('Description','condizione','timepoint'), measure.vars =  c('Observed', 'Chao1', 'Simpson', 'Shannon')) %>%
   ggplot() +
@@ -98,14 +98,14 @@ distwu_2cat <- phyloseq::distance(subset_samples(gg_topi, timepoint %in% c('T2',
 permanova <- vegan::adonis(formula = distwu_2cat ~ merge_timepoint, data = metadata_2cat)
 ```
 
-```{r Plot ordination, fig.cap="Fig 3B: Beta diversity differences pre and post challange T2 vs T3"}
+```{r Plot ordination, fig.cap="Fig 3B: Beta diversity differences pre and post challange T2 vs T3", fig.dim = c(5,5)}
 subset(ordwu, timepoint %in% c('T2','T3')) %>%
 ggplot(aes(Axis.1, Axis.2)) +
   geom_point(aes(color=timepoint), size=3, alpha=.8) +
   scale_color_manual(name = "Timepoint", values = cm_palette[c(2,3)]) +
   theme_cm() +
   annotation_custom(grob = grid::textGrob(label = bquote(atop("p-value"==.(permanova$aov.tab$`Pr(>F)`[1]),italic(R^2)==.(signif(permanova$aov.tab$R2[1], 2)))),
-    gp=grid::gpar(col="black", fontsize=13)),  xmin = 0.15, xmax = .15, ymin = .05, ymax = .05)
+    gp=grid::gpar(col="black", fontsize=11)),  xmin = 0.15, xmax = .15, ymin = .12, ymax = .12)
 ```
 
 ```{r DESeq2 loading, cache=TRUE}
@@ -142,7 +142,7 @@ lacno_bact_relabs %>%
   dplyr::summarise("Wilcoxon p value"=wilcox.test(unlist(T2), unlist(T3), paired = TRUE)$p.value)  %>% knitr::kable()
 ```
 
-```{r fig.cap="Fig 3C: Differential abundance analysis highlighted Bacteroidales S24/7 and Lacnospiraceae as most differential abunant families."}
+```{r fig.cap="Fig 3C: Differential abundance analysis highlighted Bacteroidales S24/7 and Lacnospiraceae as most differential abunant families.", fig.dim=c(4,4)}
   lacno_bact_relabs %>%
   ggplot() +
     geom_boxplot(aes(timepoint, Abundance, fill=timepoint)) + 
@@ -152,7 +152,7 @@ lacno_bact_relabs %>%
     theme_cm()
 ```
 
-```{r fig.cap="Fig 3D: Ordination centroids beta diversity all timepoints"}
+```{r fig.cap="Fig 3D: Ordination centroids beta diversity all timepoints", fig.dim = c(5,6)}
 not12 <- gg_topi %>%
   subset_samples(!(timepoint %in% c("T1", "T2")))
 
@@ -172,7 +172,7 @@ ggplot(x, aes(Axis.1, Axis.2, color=timepoint)) +
 ```
 
 ## Panel ?: Ordination beta diversity T3 vs T7
-```{r}
+```{r, fig.dim = c(5, 6)}
 metadata_2cat <- mappingfile[mappingfile$timepoint %in% c('T7','T3'),]
 distwu_2cat <- phyloseq::distance(subset_samples(gg_topi, timepoint %in% c('T7','T3')), "wunifrac")
 permanova <- vegan::adonis(formula = distwu_2cat ~ merge_timepoint, data = metadata_2cat)
@@ -218,7 +218,7 @@ genus_ab_t <- otu_table(ggtopi_subs.genus.relab)[rownames(res37.filt), ] %>%
 
 ```
 
-```{r fig3E, fig.cap="Fig 3E: Boxplot of abundance of significant genera from DESeq2 differential analysis. Genera with median below 1% are filtered"}
+```{r fig3E, fig.cap="Fig 3E: Boxplot of abundance of significant genera from DESeq2 differential analysis. Genera with median below 1% are filtered", fig.height=8}
 genus_ab_t %>%
   bind_cols(data.frame(tax_table(ggtopi_subs.genus.relab)[genus_ab_t$OTU,c('Phylum','Family','Genus')])) %>%
   filter(OTU %in% (genus_ab_t %>%
@@ -238,7 +238,7 @@ ggplot() +
   theme_cm()
 ```
 
-```{r supplfig3E, fig.cap="Fig 3E: Boxplot of abundance of significant genera from DESeq2 differential analysis"}
+```{r supplfig3E, fig.cap="Fig 3E: Boxplot of abundance of significant genera from DESeq2 differential analysis", fig.height=9}
 genus_ab_t %>%
   bind_cols(data.frame(tax_table(ggtopi_subs.genus.relab)[genus_ab_t$OTU,c('Phylum','Family','Genus')])) %>%
   filter(Phylum != "Unassigned") %>%
@@ -271,7 +271,6 @@ otu_table(gg_topi.genus.relab)[c(idx_247,idx_lachno),] %>%
 ggplot() +
   geom_boxplot(aes(timepoint, Abundance, fill=condition)) +
   scale_fill_manual(name = "Treatment", values = c("#a6d854","#ffd92f","#66c2a5","#fc8d62")) +
-  ggsignif::geom_signif(comparisons = list(c('T2','T3')), y_position = 0.5, tip_length = 0, test = 't.test') +
   facet_wrap(facets = 'taxlab', nrow = 2, scales = "free", shrink = FALSE) +
   theme_cm() +
   ylab('Relative abundance') +
@@ -329,7 +328,7 @@ for(x in unique(brayc_ds$timepoint2)){
 ds_corr_braycf[,c('x','y')] <- list(c(.45,.45,.45),c(300,650,2000))
 ```
 
-```{r fig3G, corr tumor braycurtis, fig.cap="Fig 3 G: Scatterplot of tumor size and difference of beta diversity "}
+```{r fig3G, corr tumor braycurtis, fig.cap="Fig 3 G: Scatterplot of tumor size and difference of beta diversity ", fig.height=3}
 distancesbc %>% 
   dplyr::filter(topo1==topo2) %>%
   dplyr::filter(timepoint1==3) %>%
@@ -348,22 +347,42 @@ distancesbc %>%
 ```
 
 
-```{r corr tumor braycurtis, fig.cap="Fig 3I: Scatterplot of tumor size and difference of beta diversity "}
-
-otu_table(gg_topi.genus.relab)[idx_247,] %>%
+```{r corr tumor braycurtis, fig.cap="Fig 3I: Scatterplot of tumor size and difference of beta diversity ", fig.height=3}
+tbl_data <- otu_table(gg_topi.genus.relab)[idx_247,] %>%
   data.frame %>%
-  tibble::rownames_to_column("OTU") %>%
-  tidyr::gather_("SampleID", "Abundance", setdiff(colnames(.), "OTU")) %>%
+  tidyr::gather_("SampleID", "Abundance", colnames(.)) %>%
+  mutate(mouseid=stringr::str_sub(.$SampleID,8, 10)) %>%
   mutate(timepoint=stringr::str_sub(.$SampleID,12, 13)) %>%
   mutate(condition= stringr::str_sub(.$SampleID,4, 6)) %>%
   filter(timepoint %in% c('T3','T7')) %>%
-  select(-SampleID, -OTU) %>%
-  group_by(condition) %>%
-  summarise(Abundance = list(Abundance)) %>%
-  spread(condition, Abundance)
+  select(-SampleID) %>%
+  spread(timepoint,Abundance) %>%
+  mutate(diff_abb = T3-T7) %>%
+  arrange(mouseid) %>%
+  bind_cols( gg_topi.genus.relab %>%
+              sample_data %>%
+              filter(timepoint == 'T7') %>%
+              select(id.topo, tumor_mass) %>%
+              arrange(id.topo) %>%
+              select(-id.topo))
 
-
-  bind_cols(data.frame(tax_table(gg_topi.genus.relab)[.$OTU,c('Phylum','Family','Genus')])) %>%
-  mutate(taxlab = ifelse(stringr::str_detect(Genus,'uncultured'), paste('Uncultured',Family,sep = ' '), paste(Genus)))
-
+tbl_data %>%
+ggplot(aes(diff_abb, tumor_mass)) +
+  geom_point() +
+  facet_wrap(facets = 'condition', nrow = 1, scales = 'free') +
+  stat_smooth(method = 'lm', color='red') + 
+  theme_cm() +
+  xlab('Relative abundance (T3-T7)') +
+  ylab(bquote('Tumor mass'~( mm^3)))
 ```
+
+```{r}
+tbl_data %>%
+  select(-T3,-T7, -mouseid) %>%
+  group_by(condition) %>%
+  summarise(diff_abb = list(diff_abb), tumor_mass = list(tumor_mass)) %>%
+  group_by(condition) %>%
+  mutate(cor.test = paste(unlist(cor.test(unlist(diff_abb), unlist(tumor_mass))[c('p.value','estimate')]), collapse = ' ')) %>%
+  separate(cor.test, into = c('p.value','estimate'), sep = ' ')
+```
+
