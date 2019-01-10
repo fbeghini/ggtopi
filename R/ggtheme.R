@@ -13,4 +13,4 @@ theme_cm <- function(){
         strip.text = element_text(family = "Montserrat", size = 12, colour = "black"))
 }
 
-cm_palette <- c('#e41a1c','#377eb8','#4daf4a','#984ea3','#ff7f00','#ffff33','#a65628')
+cm_palette <- c('#e41a1c','#377eb8','#4daf4a','#984ea3','#FF8F33','#FFE133','#6D3100')

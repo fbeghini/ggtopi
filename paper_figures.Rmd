@@ -10,7 +10,7 @@ editor_options:
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(message = FALSE, warning = FALSE, paged.print=FALSE, echo=FALSE)
+knitr::opts_chunk$set(message = FALSE, warning = FALSE, paged.print=FALSE, echo=FALSE, dev=c('svg', 'png'))
 knitr::opts_chunk$set(fig.width=8, fig.height=6) 
 library(phyloseq)
 library(magrittr)
@@ -50,8 +50,9 @@ ttest_res <- data.frame()
 for ( ts in combn(levels(filt_alpha$timepoint), 2, simplify = FALSE)){
   for( measure in c('Observed', 'Chao1', 'Simpson', 'Shannon') ){
     ttest_res %<>% bind_rows( data.frame(Measure = measure,
-                                         Timepoint = paste(ts, collapse = ' vs '),
-                                         pvalue = with(filt_alpha %>% filter(timepoint %in% ts), t.test(as.formula(paste(measure, 't', sep = '~')), alternative ='two.sided'))$p.value))
+                                         Timepoint1 = ts[1],
+                                         Timepoint2 = ts[2],
+                                         pvalue = with(filt_alpha %>% filter(timepoint %in% ts), t.test(as.formula(paste(measure, 't', sep = '~'))))$p.value))
   }
 }
 ```
@@ -62,15 +63,17 @@ knitr::kable(ttest_res)
 
 
 ```{r fig3a, fig.cap='Fig 3A: Alpha diversity controls T1 vs T2 and pre and post challenge T2 vs T3', fig.height=5, fig.width=5}
+annot_df <- (ttest_res %>% filter(Measure == 'Chao1') %>% filter(pvalue < 0.05) %>% mutate(pvalue = paste('p=',signif(pvalue,2), sep = '')))
 filt_alpha %>%
   melt(id.vars = c('Description','condizione','timepoint'), measure.vars =  c('Chao1')) %>%
-  ggplot(aes(timepoint, value, fill=timepoint)) +
-  geom_boxplot(width=0.8) +
+  ggplot(aes(timepoint, value)) +
+  geom_boxplot(aes(fill=timepoint), width=0.8, alpha=.8) +
   xlab('Timepoint') +
   ylab('Chao1 Index') +
   scale_fill_manual(name = "Timepoint", values = cm_palette) +
-  ggsignif::geom_signif(comparisons = list(c('T1','T3')), y_position = 240, tip_length = 0, test = 't.test') +
-  ggsignif::geom_signif(comparisons = list(c('T2','T3')), y_position = 230, tip_length = 0, test = 't.test') +
+  # ggsignif::geom_signif(comparisons = list(c('T1','T3')), y_position = 240, tip_length = 0, test = 't.test') +
+  # ggsignif::geom_signif(comparisons = list(c('T2','T3')), y_position = 230, tip_length = 0, test = 't.test') +
+  geom_signif(data = annot_df, manual=TRUE, aes(annotations = pvalue, xmin=Timepoint1, xmax=Timepoint2, y_position = c(235,225))) +
   guides(fill=FALSE) +
   theme_cm()
 ```
@@ -98,7 +101,7 @@ distwu_2cat <- phyloseq::distance(subset_samples(gg_topi, timepoint %in% c('T2',
 permanova <- vegan::adonis(formula = distwu_2cat ~ merge_timepoint, data = metadata_2cat)
 ```
 
-```{r Plot ordination, fig.cap="Fig 3B: Beta diversity differences pre and post challange T2 vs T3", fig.dim = c(5,5)}
+```{r Plot ordination, fig.cap="Fig 3B: Beta diversity differences pre and post challange T2 vs T3", fig.dim = c(6,5)}
 subset(ordwu, timepoint %in% c('T2','T3')) %>%
 ggplot(aes(Axis.1, Axis.2)) +
   geom_point(aes(color=timepoint), size=3, alpha=.8) +
@@ -128,31 +131,37 @@ genus_ab_t <- otu_table(gg_topi.genus.relab)[rownames(res.filt_genus), t23_sampl
 ```
 
 ```{r}
-lacno_bact_relabs <-genus_ab_t %>% bind_cols(data.frame(tax_table(gg_topi.genus.relab)[genus_ab_t$OTU,c('Phylum','Family','Genus')])) %>% filter(Family %in% c('Bacteroidales S24-7 group') | Genus %in% c('Lachnospiraceae NK4A136 group'))
+lacno_bact_relabs <- genus_ab_t %>% 
+                     bind_cols(data.frame(tax_table(gg_topi.genus.relab)[genus_ab_t$OTU,c('Phylum','Family','Genus')])) %>% 
+                     filter(Family %in% c('Bacteroidales S24-7 group') | Genus %in% c('Lachnospiraceae NK4A136 group')) %>% 
+                     mutate(taxlab = str_replace(ifelse(stringr::str_detect(Genus,'uncultured'), paste(Family,sep = ''), paste(Genus, sep = '')), ' group','')) %>%
+                     select(taxlab, Abundance, timepoint, OTU)
 
-lacno_bact_relabs %>% group_by(timepoint, interaction(Family, Genus)) %>% dplyr::summarise(Mean=mean(Abundance), SD = sd(Abundance)) %>% knitr::kable()
+lacno_bact_relabs %>% group_by(timepoint,taxlab) %>% dplyr::summarise(Mean=mean(Abundance), SD = sd(Abundance)) %>% knitr::kable()
 
-lacno_bact_relabs %>% 
-  mutate(Taxonomy=interaction(Family, Genus)) %>%
-  select(Abundance, Taxonomy, timepoint) %>%
-  group_by(timepoint, Taxonomy) %>%
-  summarise(Abundance = list(Abundance)) %>% 
-  spread(timepoint, Abundance) %>% 
-  group_by(Taxonomy) %>%
-  dplyr::summarise("Wilcoxon p value"=wilcox.test(unlist(T2), unlist(T3), paired = TRUE)$p.value)  %>% knitr::kable()
 ```
 
-```{r fig.cap="Fig 3C: Differential abundance analysis highlighted Bacteroidales S24/7 and Lacnospiraceae as most differential abunant families.", fig.dim=c(4,4)}
-  lacno_bact_relabs %>%
-  ggplot() +
-    geom_boxplot(aes(timepoint, Abundance, fill=timepoint)) + 
-    scale_fill_manual(name = "Timepoint", values = cm_palette[c(2,3)]) +
-    facet_wrap(interaction(Family, Genus) ~ ., scales = "free_x", as.table= T) +
-    guides(fill=FALSE) +
-    theme_cm()
+```{r fig.cap="Fig 3C: Differential abundance analysis highlighted Bacteroidales S24/7 and Lacnospiraceae as most differential abunant families.", fig.dim=c(6,5)}
+annot_data <- res.filt_genus[unique(lacno_bact_relabs$OTU),] %>% 
+              data.frame %>% 
+              rownames_to_column('OTU') %>% 
+              bind_cols(taxlab = c('Lachnospiraceae NK4A136','Bacteroidales S24-7'),  xmin = c('T2','T2'), timepoint = c('T3','T3'), y_position =  c(0.6,0.7)) %>%
+              select(annotations = padj, taxlab, timepoint, xmin, y_position)
+
+ggplot(data=lacno_bact_relabs, aes(x=timepoint, y=Abundance)) +
+  stat_boxplot(aes(fill=timepoint), alpha=.8) +
+  facet_wrap(~taxlab) +
+  scale_fill_manual('Timepoint', values=cm_palette[c(2,3)]) + 
+  geom_signif(data = annot_data,
+              aes(annotations = signif(annotations,2), xmin=xmin, xmax=timepoint, y_position = y_position), manual = TRUE) +
+  theme_cm() +
+  theme(strip.text = element_text(size=11)) +
+  xlab('Timepoint') +
+  ylab('Relative abundance')+
+  guides(fill=FALSE)
 ```
 
-```{r fig.cap="Fig 3D: Ordination centroids beta diversity all timepoints", fig.dim = c(5,6)}
+```{r fig.cap="Fig 3D: Ordination centroids beta diversity all timepoints", fig.dim = c(6,5)}
 not12 <- gg_topi %>%
   subset_samples(!(timepoint %in% c("T1", "T2")))
 
@@ -162,7 +171,7 @@ x<-not12 %>%
 centroids <- aggregate(cbind(Axis.1, Axis.2)~timepoint, x, mean)
 centroids[1:4,c('X2','Y2')] <- centroids[-1,c(2:3)]
 ggplot(x, aes(Axis.1, Axis.2, color=timepoint)) +
-  geom_point(size = 0.8, alpha=0.7) +
+  geom_point(size = 1.5, alpha=0.7) +
   geom_point(data=centroids, size = 4) + 
   geom_segment(aes(x=Axis.1, y=Axis.2, xend=X2, yend=Y2), 
                arrow = arrow(length = unit(0.1,'inches')),
@@ -172,7 +181,7 @@ ggplot(x, aes(Axis.1, Axis.2, color=timepoint)) +
 ```
 
 ## Panel ?: Ordination beta diversity T3 vs T7
-```{r, fig.dim = c(5, 6)}
+```{r, fig.dim = c(6, 5)}
 metadata_2cat <- mappingfile[mappingfile$timepoint %in% c('T7','T3'),]
 distwu_2cat <- phyloseq::distance(subset_samples(gg_topi, timepoint %in% c('T7','T3')), "wunifrac")
 permanova <- vegan::adonis(formula = distwu_2cat ~ merge_timepoint, data = metadata_2cat)
@@ -180,9 +189,9 @@ permanova <- vegan::adonis(formula = distwu_2cat ~ merge_timepoint, data = metad
 subset(ordwu, timepoint %in% c('T7','T3')) %>%
 ggplot(aes(Axis.1, Axis.2)) +
   geom_point(aes(color=timepoint), size=3, alpha=.8) +
-  scale_color_manual(name = "Timepoint", values = cm_palette[c(4,7)])+
+  scale_color_manual(name = "Timepoint", values = cm_palette[c(3,7)])+
   theme_minimal() +
-  annotation_custom(grob = grid::textGrob(bquote(atop(italic("p-value")==.(permanova$aov.tab$`Pr(>F)`[1]),italic(R^2)==.(signif(permanova$aov.tab$R2[1], 2)))), gp=grid::gpar(col="black", fontsize=10)),  xmin = 0, xmax = 0, ymin = .1, ymax = .1)
+  annotation_custom(grob = grid::textGrob(bquote(atop(italic("p-value")==.(permanova$aov.tab$`Pr(>F)`[1]),italic(R^2)==.(signif(permanova$aov.tab$R2[1], 2)))), gp=grid::gpar(col="black", fontsize=11)),  xmin = 0, xmax = 0, ymin = .1, ymax = .1)
 ```
 
 
@@ -218,7 +227,7 @@ genus_ab_t <- otu_table(ggtopi_subs.genus.relab)[rownames(res37.filt), ] %>%
 
 ```
 
-```{r fig3E, fig.cap="Fig 3E: Boxplot of abundance of significant genera from DESeq2 differential analysis. Genera with median below 1% are filtered", fig.height=8}
+```{r fig3E, fig.cap="Fig 3E: Boxplot of abundance of significant genera from DESeq2 differential analysis. Genera with median below 1% are filtered", fig.height=6}
 genus_ab_t %>%
   bind_cols(data.frame(tax_table(ggtopi_subs.genus.relab)[genus_ab_t$OTU,c('Phylum','Family','Genus')])) %>%
   filter(OTU %in% (genus_ab_t %>%
@@ -229,7 +238,7 @@ genus_ab_t %>%
   filter(Phylum != "Unassigned") %>%
   mutate(taxlab = ifelse(stringr::str_detect(Genus,'uncultured'), paste('Uncultured',Family,sep = ' '), paste(Genus))) %>%
 ggplot() +
-  geom_boxplot(aes(reorder(taxlab, Abundance, FUN = median), Abundance, fill=timepoint),  position = position_dodge(-.85)) +
+  geom_boxplot(aes(reorder(taxlab, Abundance, FUN = median), Abundance, fill=timepoint),  position = position_dodge(-.85),alpha=.8) +
   facet_grid(Phylum ~ ., scales = "free", space = "free_y", as.table= T) +
   scale_fill_manual(name = "Timepoint", values = cm_palette[c(3,7)]) +
   coord_flip() +
@@ -244,7 +253,7 @@ genus_ab_t %>%
   filter(Phylum != "Unassigned") %>%
   mutate(taxlab = ifelse(stringr::str_detect(Genus,'uncultured'), paste('Uncultured',Family,sep = ' '), paste(Genus))) %>%
 ggplot() +
-  geom_boxplot(aes(reorder(taxlab, Abundance, FUN = median), Abundance, fill=timepoint),  position = position_dodge(-.85)) +
+  geom_boxplot(aes(reorder(taxlab, Abundance, FUN = median), Abundance, fill=timepoint),  position = position_dodge(-.85),alpha=.8) +
   facet_grid(Phylum ~ ., scales = "free", space = "free_y", as.table= T) +
   scale_fill_manual(name = "Timepoint", values = cm_palette[c(3,7)]) +
   coord_flip() +
@@ -256,28 +265,10 @@ ggplot() +
         legend.position = "bottom")
 ```
 
-```{r fig3F, fig.cap="Fig 3 F: Abundance of Bacteroidales 24/7 and Lachnospiraceae NK4A136 through timepoints and treatment"}
+```{r}
 idx_247 <- which(tax_table(gg_topi.genus.relab)[,'Family'] == "Bacteroidales S24-7 group" & tax_table(gg_topi.genus.relab)[,'Genus'] == "uncultured bacterium")
 idx_lachno <- which(tax_table(gg_topi.genus.relab)[,'Genus'] == "Lachnospiraceae NK4A136 group" )
 
-otu_table(gg_topi.genus.relab)[c(idx_247,idx_lachno),] %>%
-  data.frame %>%
-  tibble::rownames_to_column("OTU") %>%
-  tidyr::gather_("SampleID", "Abundance", setdiff(colnames(.), "OTU")) %>%
-  mutate(timepoint=stringr::str_sub(.$SampleID,12, 13)) %>%
-  mutate(condition= stringr::str_sub(.$SampleID,4, 6)) %>%
-  bind_cols(data.frame(tax_table(gg_topi.genus.relab)[.$OTU,c('Phylum','Family','Genus')])) %>%
-  mutate(taxlab = ifelse(stringr::str_detect(Genus,'uncultured'), paste('Uncultured',Family,sep = ' '), paste(Genus))) %>%
-ggplot() +
-  geom_boxplot(aes(timepoint, Abundance, fill=condition)) +
-  scale_fill_manual(name = "Treatment", values = c("#a6d854","#ffd92f","#66c2a5","#fc8d62")) +
-  facet_wrap(facets = 'taxlab', nrow = 2, scales = "free", shrink = FALSE) +
-  theme_cm() +
-  ylab('Relative abundance') +
-  xlab('Timepoint')
-```
-
-```{r}
 k<- otu_table(gg_topi.genus.relab)[c(idx_247,idx_lachno),] %>%
    data.frame %>%
    tibble::rownames_to_column("OTU") %>%
@@ -286,19 +277,23 @@ k<- otu_table(gg_topi.genus.relab)[c(idx_247,idx_lachno),] %>%
    mutate(condition= stringr::str_sub(.$SampleID,4, 6)) %>%
    group_by(timepoint, condition, OTU) %>%
    summarise(Abundance = list(Abundance)) %>%
-   spread(timepoint, Abundance)
+   spread(timepoint, Abundance) %>%
+   bind_cols(data.frame(tax_table(gg_topi.genus.relab)[.$OTU,c('Family','Genus')])) %>%
+   mutate(taxlab = str_replace(ifelse(stringr::str_detect(Genus,'uncultured'), paste(Family,sep = ''), paste(Genus, sep = '')), ' group','')) %>%
+   select(-Family, -Genus)
 
 abs_test <- data.frame() 
 for(c in unique(k$condition)){
-  for(o in unique(k$OTU)){
-    for(t in combn(colnames(k)[-c(1:2)], 2, simplify = FALSE)){
+  for(o in unique(k$taxlab)){
+    for(t in combn(colnames(k)[-c(1:2,10)], 2, simplify = FALSE)){
       l <-k %>%
-        filter(condition == c & OTU == o) %>%
+        filter(condition == c & taxlab == o) %>%
         select(t)
       res <- t.test(unlist(l[,2]),unlist(l[,3]))
       abs_test %<>% bind_rows( data.frame( Condition = c,
-                                           OTU = o,
-                                           Timepoint = paste(t, collapse = ' vs '),
+                                           taxlab = o,
+                                           Timepoint1 = t[1],
+                                           Timepoint2 = t[2],
                                            p.value = signif(res$p.value,3),
                                            Direction = sign(diff(res$estimate))
                                          )
@@ -307,8 +302,52 @@ for(c in unique(k$condition)){
   }
 }
 ```
+
 ```{r}
 knitr::kable(abs_test)
+```
+
+```{r fig3F, fig.cap="Fig 3 F: Abundance of Bacteroidales 24/7 and Lachnospiraceae NK4A136 through timepoints and treatment"}
+idx_247 <- which(tax_table(gg_topi.genus.relab)[,'Family'] == "Bacteroidales S24-7 group" & tax_table(gg_topi.genus.relab)[,'Genus'] == "uncultured bacterium")
+idx_lachno <- which(tax_table(gg_topi.genus.relab)[,'Genus'] == "Lachnospiraceae NK4A136 group" )
+
+annot_df <- abs_test %>%
+  filter(Condition %in% c('VVB','VVP')) %>%
+  filter(Timepoint2 == 'T6' & Timepoint1 %in% c('T4','T5')) %>%
+  mutate(xmin = as.numeric(str_sub(Timepoint1, 2,2)) + ifelse(Condition == 'VVB', .094, .282),
+         xmax = as.numeric(str_sub(Timepoint2, 2,2)) + ifelse(Condition == 'VVB', .094, .282),
+                    #L4VVB,L5VVB,B4VVB,B5VVB,L4VVP,L5VVP,B4VVP,B5VVP
+         y_position = c(.75,  #L4B
+                        .45, #L5B
+                        
+                        .93,  #B4B
+                        .73,  #B5B
+                        
+                        .65,  #L4P
+                        .55,  #L5P
+                        
+                        .83, #B4P
+                        .63) #B5P
+         ,
+         annotations = paste('p=',signif(p.value, 2), sep = '')) %>%
+  select(taxlab, annotations, xmax, xmin, y_position)
+
+otu_table(gg_topi.genus.relab)[c(idx_247,idx_lachno),] %>%
+  data.frame %>%
+  tibble::rownames_to_column("OTU") %>%
+  tidyr::gather_("SampleID", "Abundance", setdiff(colnames(.), "OTU")) %>%
+  mutate(timepoint=stringr::str_sub(.$SampleID,12, 13)) %>%
+  mutate(condition= stringr::str_sub(.$SampleID,4, 6)) %>%
+  bind_cols(data.frame(tax_table(gg_topi.genus.relab)[.$OTU,c('Phylum','Family','Genus')])) %>%
+  mutate(taxlab = str_replace(ifelse(stringr::str_detect(Genus,'uncultured'), paste(Family,sep = ''), paste(Genus, sep = '')), ' group','')) %>%
+ggplot() +
+  geom_boxplot(aes(timepoint, Abundance, fill=condition), alpha=.8) +
+  scale_fill_manual(name = "Treatment", values = c("#a6d854","#ffd92f","#66c2a5","#fc8d62")) +
+  facet_wrap(facets = 'taxlab', nrow = 2, scales = "free_x") +
+  geom_signif(data = annot_df, manual = TRUE, aes(xmin = xmin, xmax = xmax, annotations = annotations, y_position = y_position),textsize=3) +
+  theme_cm() +
+  ylab('Relative abundance') +
+  xlab('Timepoint')
 ```
 
 ```{r}
@@ -325,7 +364,7 @@ for(x in unique(brayc_ds$timepoint2)){
     tmp_res <- with(brayc_ds %>% filter(timepoint2==x), cor.test(value, tumor_mass))
     ds_corr_braycf %<>% bind_rows(data.frame(timepoint = paste('T', x, '-T3',sep = ''), corr = signif(tmp_res$estimate,2), pval = signif(tmp_res$p.value,2), label = paste('p=',signif(tmp_res$p.value,2),'\nr=', signif(tmp_res$estimate,2), sep = '')))
 }
-ds_corr_braycf[,c('x','y')] <- list(c(.45,.45,.45),c(300,650,2000))
+ds_corr_braycf[,c('x','y')] <- list(c(.45,.45,.45),c(300,670,2000))
 ```
 
 ```{r fig3G, corr tumor braycurtis, fig.cap="Fig 3 G: Scatterplot of tumor size and difference of beta diversity ", fig.height=3}
@@ -370,7 +409,7 @@ tbl_data %>%
 ggplot(aes(diff_abb, tumor_mass)) +
   geom_point() +
   facet_wrap(facets = 'condition', nrow = 1, scales = 'free') +
-  stat_smooth(method = 'lm', color='red') + 
+  geom_line(stat='smooth', method = 'lm', color='red', alpha=0.7, size=.7) + 
   theme_cm() +
   xlab('Relative abundance (T3-T7)') +
   ylab(bquote('Tumor mass'~( mm^3)))
