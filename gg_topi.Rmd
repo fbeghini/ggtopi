@@ -26,7 +26,7 @@ source('R/calculatePairwiseDistances.R')
 
 ```{r load qiime, include=FALSE, cache=TRUE}
 gg_topi <- loadQiimeData()
-
+mappingfile <- data.frame(sample_data(gg_topi))
 gg_topi.genus <- tax_glom(gg_topi,taxrank = "Genus")
 gg_topi.genus.relab <- transform_sample_counts(gg_topi.genus, function(x) x/sum(x))
 
@@ -628,7 +628,8 @@ mass_247 <- otu_table(gg_topi.genus.relab)[idx_247,] %>%
   mutate(timepoint=stringr::str_sub(.$SampleID,12, 13)) %>%
   mutate(condition= stringr::str_sub(.$SampleID,4, 6)) %>%
   mutate(mouseID=as.integer(stringr::str_sub(.$SampleID,8, 10))) %>%
-  left_join(mappingfile[mappingfile$timepoint=='T7',], by=c('mouseID' = 'id-topo'))
+  mutate(mouseID=as.factor(mouseID))%>%
+  left_join(mappingfile[mappingfile$timepoint=='T7',], by=c('mouseID' = 'id.topo'))
 
 mass_247 %>%
   ggplot(aes(Abundance,tumor_mass)) +
@@ -651,13 +652,18 @@ print(knitr::kable(ds_corr_247))
 # Correlation of tumor size at T7 and difference of abundance of Bacteroidales 24/7 through timepoints
 ```{r}
 mass_247 %>%
-  filter(timepoint.x %in% c('T3','T7')) %>%
+  filter(timepoint.x %in% c('T3','T5','T6','T7')) %>% 
   select(Abundance, timepoint.x, condition, tumor_mass,mouseID) %>%
   tidyr::spread(timepoint.x, Abundance) %>%
-  mutate(T3_7 = abs(T7-T3)) %>%
-  ggplot(aes(T3_7,tumor_mass)) +
+  mutate(T3_7 = abs(T7-T3), T3_6 = abs(T6-T3),T3_5 = abs(T5-T3)) %>%
+  select(-T3,-T5,-T6,-T7) %>%
+  tidyr::gather(key = timepoint, value=abundance, -condition, -tumor_mass, -mouseID) %>%
+  ggplot(aes(abundance, tumor_mass)) +
   geom_point() +
-  geom_smooth(method = 'lm')
+  facet_grid(timepoint~condition)+
+  geom_smooth(method = 'lm') + 
+  theme_cm() + 
+  
 ```
 
 ```{r}
